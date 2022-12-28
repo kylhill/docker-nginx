@@ -13,10 +13,7 @@ RUN \
     nginx \
     nginx-mod-http-set-misc \
     nginx-mod-http-dav-ext \
-    nginx-mod-http-fancyindex && \
-  echo "**** configure logging ****" && \
-  ln -sf /dev/stdout /var/log/nginx/access.log && \
-  ln -sf /dev/stderr /var/log/nginx/error.log
+    nginx-mod-http-fancyindex
 
 EXPOSE 80
 EXPOSE 443
