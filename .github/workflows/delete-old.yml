@@ -1,0 +1,34 @@
+name: Delete old container packages
+
+on:
+  workflow_dispatch:
+
+jobs:
+  delete-old-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get all container packages
+        id: get_packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -H "Accept: application/vnd.github+json" \
+            /users/${{ github.repository_owner }}/packages?package_type=container \
+            > packages.json
+          cat packages.json
+
+      - name: Find latest package and delete others
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          latest_id=$(jq '.[0].id' packages.json)
+          for id in $(jq '.[].id' packages.json); do
+            if [ "$id" != "$latest_id" ]; then
+              gh api --method DELETE \
+                -H "Accept: application/vnd.github+json" \
+                /users/${{ github.repository_owner }}/packages/container/docker-nginx/versions/$id
+              echo "Deleted package version: $id"
+            else
+              echo "Keeping latest package version: $id"
+            fi
+          done
