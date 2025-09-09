@@ -1,34 +1,22 @@
 name: Delete old container packages
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Allows manual triggering
+  # Or schedule: # For automated deletion at regular intervals
+  #   cron: '0 0 * * *' # Example: run daily at midnight UTC
 
 jobs:
-  delete-old-packages:
+  delete-versions:
     runs-on: ubuntu-latest
-    steps:
-      - name: Get all container packages
-        id: get_packages
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api -H "Accept: application/vnd.github+json" \
-            /users/${{ github.repository_owner }}/packages?package_type=container \
-            > packages.json
-          cat packages.json
+    permissions:
+      packages: write # Grant write permissions to packages
+      contents: read # Grant read permissions to repository contents
 
-      - name: Find latest package and delete others
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          latest_id=$(jq '.[0].id' packages.json)
-          for id in $(jq '.[].id' packages.json); do
-            if [ "$id" != "$latest_id" ]; then
-              gh api --method DELETE \
-                -H "Accept: application/vnd.github+json" \
-                /users/${{ github.repository_owner }}/packages/container/docker-nginx/versions/$id
-              echo "Deleted package version: $id"
-            else
-              echo "Keeping latest package version: $id"
-            fi
-          done
+    steps:
+      - name: Delete old package versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: 'docker-nginx' # Replace with your package name
+          package-type: 'container' # Replace with your package type (e.g., 'container', 'maven', 'nuget', 'rubygems')
+          min-versions-to-keep: 1 # Keep only the latest version
+          token: ${{ secrets.GITHUB_TOKEN }} # Use the default GITHUB_TOKEN or a PAT with delete:packages scope
