@@ -4,11 +4,11 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
       packages: write
@@ -19,11 +19,12 @@ jobs:
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-        with:
-          platforms: linux/amd64,linux/arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          install: true
+          driver-opts: network=host        
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -38,5 +39,10 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          outputs: type=image,name=target,annotation-index.org.opencontainers.image.description=linuxserver.io Nginx (without PHP) inside Docker
           tags: ghcr.io/${{ github.repository }}:latest
+          outputs: type=registry
+
+      - name: Verify pushed image manifest
+        run: |
+          echo "Checking manifest for ghcr.io/${{ github.repository }}:latest"
+          docker buildx imagetools inspect ghcr.io/${{ github.repository }}:latest
