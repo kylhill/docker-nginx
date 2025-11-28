@@ -5,7 +5,7 @@
 cp -ru /defaults/nginx/ /config/
 
 # precreate log files
-for file in /config/log/nginx/access.log /config/log/nginx/error.log; do
+for file in /config/log/nginx/access.log /config/log/nginx/error.log /config/log/nginx/geoip-blocked.log; do
     if [[ ! -f "${file}" ]]; then
         touch "${file}"
     fi
