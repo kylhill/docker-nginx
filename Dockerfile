@@ -31,7 +31,3 @@ COPY root/ /
 # ports and volumes
 EXPOSE 80 443
 VOLUME /config
-
-# healthcheck
-HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
-  CMD wget -q --spider https://localhost:443/index.html || exit 1
