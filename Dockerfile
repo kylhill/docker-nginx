@@ -15,7 +15,8 @@ RUN set -eux; \
     nginx-mod-http-brotli \
     nginx-mod-http-dav-ext \
     nginx-mod-http-fancyindex \
-    nginx-mod-http-geoip2; \
+    nginx-mod-http-geoip2 \
+    nginx-mod-http-zstd; \
   # Remove default config
   rm -f /etc/nginx/http.d/default.conf; \
   # Fix logrotate
