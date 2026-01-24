@@ -1,6 +1,6 @@
 /config/log/nginx/*.log {
-        weekly
-        rotate 14
+        daily
+        rotate 7
         compress
         delaycompress
         nodateext
