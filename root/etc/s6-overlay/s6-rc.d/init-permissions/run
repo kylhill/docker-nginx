@@ -13,9 +13,6 @@ if [[ -f "/config/log/logrotate.status" ]]; then
     chmod 600 /config/log/logrotate.status
 fi
 
-chmod -R g+w \
-    /config/nginx
-
 if [[ -z ${LSIO_NON_ROOT_USER} ]]; then
     lsiown -R abc:abc \
         /config/keys \
