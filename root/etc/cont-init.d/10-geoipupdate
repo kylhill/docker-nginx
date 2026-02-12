@@ -24,11 +24,10 @@ if [[ -n "$ACCOUNT_ID" && -n "$LICENSE_KEY" ]]; then
 AccountID ${ACCOUNT_ID}
 LicenseKey ${LICENSE_KEY}
 EditionIDs ${GEOIPUPDATE_EDITION_IDS}
-DatabaseDirectory /config/geoip
 EOF
 
   echo "Running geoipupdate..."
-  geoipupdate
+  /usr/local/bin/geoipupdate -f /etc/GeoIP.conf -d /config/geoip
 else
   echo "GeoIPUpdate credentials not set, skipping update."
 fi

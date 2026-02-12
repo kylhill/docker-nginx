@@ -49,10 +49,7 @@ RUN set -eux; \
     rm -rf /tmp/*; \
     apk del .build-deps
 
-# GeoIP environment variables
-ENV GEOIPUPDATE_ACCOUNT_ID="" \
-    GEOIPUPDATE_LICENSE_KEY="" \
-    GEOIPUPDATE_EDITION_IDS="GeoLite2-Country"
+ENV GEOIPUPDATE_EDITION_IDS="GeoLite2-Country"
 
 # copy local files
 COPY root/ /

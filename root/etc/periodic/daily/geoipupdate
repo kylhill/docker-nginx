@@ -1,2 +1,2 @@
 #!/bin/sh
-/usr/local/bin/geoipupdate
+/usr/local/bin/geoipupdate -f /etc/GeoIP.conf -d /config/geoip
