@@ -1,2 +1,2 @@
 #!/bin/sh
-/usr/bin/geoipupdate
+/usr/local/bin/geoipupdate
