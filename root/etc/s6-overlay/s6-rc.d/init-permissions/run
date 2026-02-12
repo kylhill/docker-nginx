@@ -15,6 +15,7 @@ fi
 
 if [[ -z ${LSIO_NON_ROOT_USER} ]]; then
     lsiown -R abc:abc \
+        /config/geoip \
         /config/keys \
         /config/log \
         /config/nginx
