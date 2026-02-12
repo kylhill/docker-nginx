@@ -16,7 +16,8 @@ RUN set -eux; \
     nginx-mod-http-dav-ext \
     nginx-mod-http-fancyindex \
     nginx-mod-http-geoip2 \
-    nginx-mod-http-zstd; \
+    nginx-mod-http-zstd \
+    geoipupdate; \
   # Remove default config
   rm -f /etc/nginx/http.d/default.conf; \
   # Fix logrotate
@@ -24,6 +25,12 @@ RUN set -eux; \
     /etc/logrotate.conf; \
   sed -i 's#/usr/sbin/logrotate /etc/logrotate.conf#/usr/sbin/logrotate /etc/logrotate.conf -s /config/log/logrotate.status#g' \
     /etc/periodic/daily/logrotate
+
+# GeoIP environment variables
+ENV GEOIPUPDATE_ACCOUNT_ID="" \
+    GEOIPUPDATE_LICENSE_KEY="" \
+    GEOIPUPDATE_EDITION_IDS="GeoLite2-Country" \
+    GEOIPUPDATE_FREQUENCY="24"
 
 # copy local files
 COPY root/ /
