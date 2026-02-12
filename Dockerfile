@@ -39,16 +39,8 @@ RUN set -eux; \
       *) echo "Unsupported arch $ARCH"; exit 1;; \
     esac; \
     \
-    # get latest release tag from GitHub API
-    #GEOIPUPDATE_LATEST="$(curl -s https://api.github.com/repos/maxmind/geoipupdate/releases/latest | jq -r .tag_name)"; \
-    #echo "Latest GeoIPUpdate release: $GEOIPUPDATE_LATEST"; \
-    GEOIPUPDATE_LATEST="7.1.0"
-    \
-    # download tar.gz for the architecture
     curl -L -o /tmp/geoipupdate.tar.gz \
       https://github.com/maxmind/geoipupdate/releases/download/v${GEOIPUPDATE_VERSION}/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${ARCH}.tar.gz; \
-    \
-    # extract binary and move to /usr/local/bin
     tar -xzf /tmp/geoipupdate.tar.gz -C /tmp; \
     mv /tmp/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${ARCH}/geoipupdate /usr/local/bin/geoipupdate; \
     chmod +x /usr/local/bin/geoipupdate; \
@@ -60,8 +52,7 @@ RUN set -eux; \
 # GeoIP environment variables
 ENV GEOIPUPDATE_ACCOUNT_ID="" \
     GEOIPUPDATE_LICENSE_KEY="" \
-    GEOIPUPDATE_EDITION_IDS="GeoLite2-Country" \
-    GEOIPUPDATE_FREQUENCY="24"
+    GEOIPUPDATE_EDITION_IDS="GeoLite2-Country"
 
 # copy local files
 COPY root/ /
