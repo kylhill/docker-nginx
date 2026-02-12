@@ -38,8 +38,9 @@ RUN set -eux; \
     esac; \
     \
     # get latest release tag from GitHub API
-    GEOIPUPDATE_LATEST="$(curl -s https://api.github.com/repos/maxmind/geoipupdate/releases/latest | jq -r .tag_name)"; \
-    echo "Latest GeoIPUpdate release: $GEOIPUPDATE_LATEST"; \
+    #GEOIPUPDATE_LATEST="$(curl -s https://api.github.com/repos/maxmind/geoipupdate/releases/latest | jq -r .tag_name)"; \
+    #echo "Latest GeoIPUpdate release: $GEOIPUPDATE_LATEST"; \
+    GEOIPUPDATE_LATEST="7.1.0"
     \
     # download tar.gz for the architecture
     curl -L -o /tmp/geoipupdate.tar.gz \
