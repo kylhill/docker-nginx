@@ -25,9 +25,11 @@ RUN set -eux; \
   sed -i 's#/usr/sbin/logrotate /etc/logrotate.conf#/usr/sbin/logrotate /etc/logrotate.conf -s /config/log/logrotate.status#g' \
     /etc/periodic/daily/logrotate
 
-# install latest geoipupdate release from GitHub
+# install geoipupdate
+ARG GEOIPUPDATE_VERSION=7.1.0
+
 RUN set -eux; \
-    apk add --no-cache --virtual .build-deps curl jq tar ca-certificates; \
+    apk add --no-cache --virtual .build-deps curl tar ca-certificates; \
     \
     # detect architecture for GitHub release
     ARCH="$(apk --print-arch)"; \
@@ -44,11 +46,11 @@ RUN set -eux; \
     \
     # download tar.gz for the architecture
     curl -L -o /tmp/geoipupdate.tar.gz \
-      "https://github.com/maxmind/geoipupdate/releases/download/${GEOIPUPDATE_LATEST}/geoipupdate_${GEOIPUPDATE_LATEST#v}_linux_${ARCH}.tar.gz"; \
+      https://github.com/maxmind/geoipupdate/releases/download/v${GEOIPUPDATE_VERSION}/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${ARCH}.tar.gz; \
     \
     # extract binary and move to /usr/local/bin
     tar -xzf /tmp/geoipupdate.tar.gz -C /tmp; \
-    mv /tmp/geoipupdate_*_linux_${ARCH}/geoipupdate /usr/local/bin/geoipupdate; \
+    mv /tmp/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${ARCH}/geoipupdate /usr/local/bin/geoipupdate; \
     chmod +x /usr/local/bin/geoipupdate; \
     \
     # cleanup temp files and remove build deps
