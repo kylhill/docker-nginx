@@ -19,6 +19,8 @@ RUN set -eux; \
     nginx-mod-http-zstd; \
   # Remove default config
   rm -f /etc/nginx/http.d/default.conf; \
+  # Remove default /var/www content
+  find /var/www -mindepth 1 ! -path /var/www/favicon.ico -exec rm -rf {} +; \
   # Fix logrotate
   sed -i "s#/var/log/messages {}.*# #g" \
     /etc/logrotate.conf; \
