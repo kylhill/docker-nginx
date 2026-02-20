@@ -13,8 +13,6 @@ RUN set -eux; \
     logrotate \
     nginx \
     nginx-mod-http-brotli \
-    nginx-mod-http-dav-ext \
-    nginx-mod-http-fancyindex \
     nginx-mod-http-geoip2 \
     nginx-mod-http-zstd; \
   # Remove default config
