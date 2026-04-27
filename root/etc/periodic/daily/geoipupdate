@@ -1,2 +1,8 @@
 #!/bin/sh
-/usr/local/bin/geoipupdate -f /etc/GeoIP.conf -d /config/geoip
+
+if [ ! -s /etc/GeoIP.conf ]; then
+	echo "GeoIPUpdate config not found, skipping update."
+	exit 0
+fi
+
+exec /usr/local/bin/geoipupdate -f /etc/GeoIP.conf -d /config/geoip
