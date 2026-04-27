@@ -10,3 +10,6 @@ for file in /config/log/nginx/access.log /config/log/nginx/error.log; do
         touch "${file}"
     fi
 done
+
+echo "Validating nginx configuration..."
+/usr/sbin/nginx -t -e stderr
