@@ -27,7 +27,13 @@ EditionIDs ${GEOIPUPDATE_EDITION_IDS}
 EOF
 
   echo "Running geoipupdate..."
-  /usr/local/bin/geoipupdate -f /etc/GeoIP.conf -d /config/geoip
+  if ! /usr/local/bin/geoipupdate -f /etc/GeoIP.conf -d /config/geoip; then
+    if ls /config/geoip/*.mmdb 1>/dev/null 2>&1; then
+      echo "WARNING: geoipupdate failed, but an existing database was found. Continuing with cached database."
+    else
+      echo "WARNING: geoipupdate failed and no existing database was found. nginx may fail to start."
+    fi
+  fi
 else
   rm -f /etc/GeoIP.conf
   echo "GeoIPUpdate credentials not set, skipping update."
