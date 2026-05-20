@@ -36,7 +36,7 @@ init-folders → init-nginx → init-permissions → init-nginx-end
                                                svc-nginx (long-running)
 ```
 
-- `init-folders`: creates `/config/geoip`, `/config/keys`, `/config/log/nginx`, `/config/nginx/site-confs`
+- `init-folders`: creates `/config/geoip`, `/config/keys`, `/config/nginx/site-confs`
 - `init-nginx`: runs `cp -ru /defaults/nginx/ /config/` and validates config with `nginx -t`
 - `init-permissions`: sets ownership of `/config/**` to `abc:abc`
 - `svc-nginx`: kills any zombie nginx processes then execs `nginx -e stderr`

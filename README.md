@@ -48,7 +48,6 @@ Adjust or remove those shared includes in `/config/nginx/snippets/` to fit your 
 - `/config/nginx/site-confs/`: place virtual hosts and reverse proxy server blocks here
 - `/config/nginx/snippets/`: reusable shared config fragments
 - `/config/keys/`: TLS certificates and private keys
-- `/config/log/nginx/`: access and error logs
 - `/config/geoip/`: GeoIP database download location
 
 ## Notes

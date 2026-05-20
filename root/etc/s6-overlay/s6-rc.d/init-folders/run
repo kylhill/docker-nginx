@@ -5,5 +5,4 @@
 mkdir -p \
     /config/geoip \
     /config/keys \
-    /config/log/nginx \
     /config/nginx/site-confs \

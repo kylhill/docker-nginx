@@ -10,7 +10,6 @@ LABEL org.opencontainers.image.title="docker-nginx" \
 RUN set -eux; \
   apk update; \
   apk add --no-cache --no-progress \
-    logrotate \
     nginx \
     nginx-mod-http-brotli \
     nginx-mod-http-geoip2 \
@@ -18,12 +17,7 @@ RUN set -eux; \
   # Remove default config
   rm -f /etc/nginx/http.d/default.conf; \
   # Remove default /var/www content
-  find /var/www -mindepth 1 ! -path /var/www/favicon.ico -exec rm -rf {} +; \
-  # Fix logrotate
-  sed -i "s#/var/log/messages {}.*# #g" \
-    /etc/logrotate.conf; \
-  sed -i 's#/usr/sbin/logrotate /etc/logrotate.conf#/usr/sbin/logrotate /etc/logrotate.conf -s /config/log/logrotate.status#g' \
-    /etc/periodic/daily/logrotate
+  find /var/www -mindepth 1 ! -path /var/www/favicon.ico -exec rm -rf {} +;
 
 # install latest geoipupdate release from GitHub
 RUN set -eux; \

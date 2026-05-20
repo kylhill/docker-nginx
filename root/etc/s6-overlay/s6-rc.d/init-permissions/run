@@ -5,18 +5,11 @@ if [[ -z ${LSIO_READ_ONLY_FS} ]] && [[ -z ${LSIO_NON_ROOT_USER} ]]; then
     # permissions
     lsiown -R abc:abc \
         /var/lib/nginx
-
-    chmod -R 644 /etc/logrotate.d
-fi
-
-if [[ -f "/config/log/logrotate.status" ]]; then
-    chmod 600 /config/log/logrotate.status
 fi
 
 if [[ -z ${LSIO_NON_ROOT_USER} ]]; then
     lsiown -R abc:abc \
         /config/geoip \
         /config/keys \
-        /config/log \
         /config/nginx
 fi
