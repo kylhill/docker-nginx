@@ -5,4 +5,4 @@
 cp -ru /defaults/nginx/ /config/
 
 echo "Validating nginx configuration..."
-/usr/sbin/nginx -t -e stderr
+/usr/sbin/nginx -t
