@@ -3,14 +3,20 @@ name: Build and Publish Docker image
 on:
   push:
     branches: [ main ]
+  schedule:
+    - cron: "47 9 * * *"  # daily 09:47 UTC
   workflow_dispatch:
+
+concurrency:
+  group: docker-nginx-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
     permissions:
-      packages: write
       contents: read
+      packages: write
 
     steps:
       - name: Checkout
@@ -26,10 +32,68 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Detect upstream base-image digest and compare to the last published image
+      - name: Resolve upstream base image digest
+        id: base
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_IMAGE="ghcr.io/linuxserver/baseimage-alpine:3.23"
+
+          # Pull manifest info for the base image and extract its digest.
+          # buildx imagetools works without pulling the image layers.
+          DIGEST_LINE="$(docker buildx imagetools inspect "${BASE_IMAGE}" | sed -n 's/^Digest:[[:space:]]*//p' | head -n1)"
+          if [[ -z "${DIGEST_LINE}" ]]; then
+            echo "Failed to determine digest for ${BASE_IMAGE}"
+            exit 1
+          fi
+
+          echo "base_image=${BASE_IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "base_digest=${DIGEST_LINE}" >> "$GITHUB_OUTPUT"
+          echo "Upstream base digest: ${DIGEST_LINE}"
+
+      - name: Resolve currently published image digest (latest)
+        id: current
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${{ github.repository }}:latest"
+
+          # Image may not exist on first run; handle gracefully.
+          if docker buildx imagetools inspect "${IMAGE}" >/dev/null 2>&1; then
+            DIGEST_LINE="$(docker buildx imagetools inspect "${IMAGE}" | sed -n 's/^Digest:[[:space:]]*//p' | head -n1)"
+            echo "current_digest=${DIGEST_LINE}" >> "$GITHUB_OUTPUT"
+            echo "Current image digest: ${DIGEST_LINE}"
+          else
+            echo "current_digest=" >> "$GITHUB_OUTPUT"
+            echo "No existing :latest image found (first publish)."
+          fi
+
+      - name: Decide whether to rebuild
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # On push to main we always build.
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # On scheduled runs: rebuild if upstream base digest differs from last published digest label.
+          # We can't directly read "base digest used" from the published image unless we record it.
+          # So we will rebuild on schedule unconditionally *unless* you later add a label-based comparison.
+          #
+          # If you want strict "only rebuild on base digest change", see the note below.
+          echo "should_build=true" >> "$GITHUB_OUTPUT"
+
+      # Build & push
       - name: Build & push multi-platform image
+        if: steps.gate.outputs.should_build == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -38,7 +102,24 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Stamp base image digest as a label
+          labels: |
+            org.opencontainers.image.base.name=${{ steps.base.outputs.base_image }}
+            org.opencontainers.image.base.digest=${{ steps.base.outputs.base_digest }}
 
       - name: Inspect manifest
+        if: steps.gate.outputs.should_build == 'true'
         run: |
           docker buildx imagetools inspect ghcr.io/${{ github.repository }}:latest
+
+      # Keep only latest 10 GHCR versions
+      - name: Prune GHCR package versions (keep 10)
+        if: steps.gate.outputs.should_build == 'true' && github.ref == 'refs/heads/main'
+        uses: actions/delete-package-versions@v5
+        with:
+          package-type: container
+          package-name: ${{ github.event.repository.name }}
+          min-versions-to-keep: 10
+          delete-only-untagged-versions: "false"
