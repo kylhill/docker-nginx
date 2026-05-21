@@ -35,7 +35,13 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Detect upstream base-image digest and compare to the last published image
+      # Install tools used to read labels from the remote image config
+      - name: Install skopeo + jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo jq
+
+      # 1) Resolve current upstream base image digest
       - name: Resolve upstream base image digest
         id: base
         shell: bash
@@ -43,55 +49,74 @@ jobs:
           set -euo pipefail
           BASE_IMAGE="ghcr.io/linuxserver/baseimage-alpine:3.23"
 
-          # Pull manifest info for the base image and extract its digest.
-          # buildx imagetools works without pulling the image layers.
-          DIGEST_LINE="$(docker buildx imagetools inspect "${BASE_IMAGE}" | sed -n 's/^Digest:[[:space:]]*//p' | head -n1)"
-          if [[ -z "${DIGEST_LINE}" ]]; then
+          BASE_DIGEST="$(docker buildx imagetools inspect "${BASE_IMAGE}" \
+            | sed -n 's/^Digest:[[:space:]]*//p' | head -n1)"
+
+          if [[ -z "${BASE_DIGEST}" ]]; then
             echo "Failed to determine digest for ${BASE_IMAGE}"
             exit 1
           fi
 
           echo "base_image=${BASE_IMAGE}" >> "$GITHUB_OUTPUT"
-          echo "base_digest=${DIGEST_LINE}" >> "$GITHUB_OUTPUT"
-          echo "Upstream base digest: ${DIGEST_LINE}"
+          echo "base_digest=${BASE_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Upstream base digest: ${BASE_DIGEST}"
 
-      - name: Resolve currently published image digest (latest)
-        id: current
+      # 2) Read the previously-published base digest label from :latest (if it exists)
+      - name: Read published base digest label from :latest
+        id: published
         shell: bash
         run: |
           set -euo pipefail
           IMAGE="ghcr.io/${{ github.repository }}:latest"
 
-          # Image may not exist on first run; handle gracefully.
-          if docker buildx imagetools inspect "${IMAGE}" >/dev/null 2>&1; then
-            DIGEST_LINE="$(docker buildx imagetools inspect "${IMAGE}" | sed -n 's/^Digest:[[:space:]]*//p' | head -n1)"
-            echo "current_digest=${DIGEST_LINE}" >> "$GITHUB_OUTPUT"
-            echo "Current image digest: ${DIGEST_LINE}"
-          else
-            echo "current_digest=" >> "$GITHUB_OUTPUT"
+          # If the image doesn't exist yet, treat as first publish.
+          if ! skopeo inspect --creds "${{ github.repository_owner }}:${{ secrets.GITHUB_TOKEN }}" "docker://${IMAGE}" >/dev/null 2>&1; then
+            echo "published_base_digest=" >> "$GITHUB_OUTPUT"
             echo "No existing :latest image found (first publish)."
+            exit 0
           fi
 
-      - name: Decide whether to rebuild
+          # Pull the image config and extract the label we stamped during build.
+          PUBLISHED_BASE_DIGEST="$(skopeo inspect --config \
+            --creds "${{ github.repository_owner }}:${{ secrets.GITHUB_TOKEN }}" \
+            "docker://${IMAGE}" \
+            | jq -r '.config.Labels["org.opencontainers.image.base.digest"] // empty')"
+
+          echo "published_base_digest=${PUBLISHED_BASE_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Published base digest label: ${PUBLISHED_BASE_DIGEST}"
+
+      # 3) Gate: build always on push; build on schedule only when base digest changed (or first publish)
+      - name: Decide whether to build
         id: gate
         shell: bash
         run: |
           set -euo pipefail
 
-          # On push to main we always build.
           if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "Reason: push to main -> build"
             echo "should_build=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # On scheduled runs: rebuild if upstream base digest differs from last published digest label.
-          # We can't directly read "base digest used" from the published image unless we record it.
-          # So we will rebuild on schedule unconditionally *unless* you later add a label-based comparison.
-          #
-          # If you want strict "only rebuild on base digest change", see the note below.
-          echo "should_build=true" >> "$GITHUB_OUTPUT"
+          BASE="${{ steps.base.outputs.base_digest }}"
+          PUBLISHED="${{ steps.published.outputs.published_base_digest }}"
 
-      # Build & push
+          if [[ -z "${PUBLISHED}" ]]; then
+            echo "Reason: no published base digest label -> build"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "${BASE}" != "${PUBLISHED}" ]]; then
+            echo "Reason: base digest changed (${PUBLISHED} -> ${BASE}) -> build"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Reason: base digest unchanged (${BASE}) -> skip"
+          echo "should_build=false" >> "$GITHUB_OUTPUT"
+
+      # 4) Build + push only if gated on
       - name: Build & push multi-platform image
         if: steps.gate.outputs.should_build == 'true'
         uses: docker/build-push-action@v5
@@ -102,9 +127,12 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+          # GitHub Actions cache backend for BuildKit layer caching
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # Stamp base image digest as a label
+
+          # Stamp base info so the next scheduled run can compare and skip if unchanged
           labels: |
             org.opencontainers.image.base.name=${{ steps.base.outputs.base_image }}
             org.opencontainers.image.base.digest=${{ steps.base.outputs.base_digest }}
@@ -114,7 +142,7 @@ jobs:
         run: |
           docker buildx imagetools inspect ghcr.io/${{ github.repository }}:latest
 
-      # Keep only latest 10 GHCR versions
+      # 5) Prune GHCR container versions: keep only last 10
       - name: Prune GHCR package versions (keep 10)
         if: steps.gate.outputs.should_build == 'true' && github.ref == 'refs/heads/main'
         uses: actions/delete-package-versions@v5
