@@ -119,7 +119,7 @@ jobs:
       # 4) Build + push only if gated on
       - name: Build & push multi-platform image
         if: steps.gate.outputs.should_build == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
