@@ -17,7 +17,8 @@ RUN set -eux; \
     nginx-mod-http-zstd \
     lua-resty-http \
     lua-resty-openssl \
-    lua-resty-string; \
+    lua-resty-string \
+    lua5.1-cjson; \
   # Remove default config
   rm -f /etc/nginx/http.d/default.conf; \
   # Remove default /var/www content
