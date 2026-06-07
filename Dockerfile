@@ -71,9 +71,9 @@ RUN set -eux; \
     cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/lib/crowdsec.lua /usr/local/lua/crowdsec/; \
     cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/lib/plugins/crowdsec/*.lua /usr/local/lua/crowdsec/plugins/crowdsec/; \
     \
-    # install ban/captcha HTML templates
+    # install ban HTML template only (no captcha)
     mkdir -p /var/lib/crowdsec/lua/templates; \
-    cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/templates/*.html /var/lib/crowdsec/lua/templates/; \
+    cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/templates/ban.html /var/lib/crowdsec/lua/templates/; \
     \
     # install nginx http config into defaults (cp -ru will deploy it to /config on startup)
     mkdir -p /defaults/nginx/http.d; \

@@ -24,6 +24,10 @@ if [ -n "${API_KEY}" ] && [ -n "${CROWDSEC_LAPI_URL:-}" ]; then
         /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf.template \
         > /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf
 
+    # disable captcha - use ban-only remediation
+    sed -i "s|^CAPTCHA_PROVIDER=.*|CAPTCHA_PROVIDER=|" \
+        /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf
+
     if [ -n "${CROWDSEC_APPSEC_URL:-}" ]; then
         sed -i "s|^APPSEC_URL=.*|APPSEC_URL=${CROWDSEC_APPSEC_URL}|" \
             /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf
