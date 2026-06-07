@@ -76,6 +76,10 @@ RUN set -eux; \
     sed -i 's|function M.New(siteKey, secretKey, TemplateFilePath, captcha_provider, ret_code)|function M.New(siteKey, secretKey, TemplateFilePath, captcha_provider, ret_code)\n    if captcha_provider == nil or captcha_provider == "" then\n        return\n    end|' \
         /usr/local/lua/crowdsec/plugins/crowdsec/captcha.lua; \
     \
+    # downgrade "APPSEC is enabled" from ERR to INFO - it's an informational startup message
+    sed -i 's|ngx.log(ngx.ERR, "APPSEC is enabled|ngx.log(ngx.INFO, "APPSEC is enabled|' \
+        /usr/local/lua/crowdsec/crowdsec.lua; \
+    \
     # install ban HTML template only (no captcha)
     mkdir -p /var/lib/crowdsec/lua/templates; \
     cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/templates/ban.html /var/lib/crowdsec/lua/templates/; \
