@@ -16,6 +16,7 @@ RUN set -eux; \
     nginx-mod-http-lua \
     nginx-mod-http-zstd \
     lua-resty-http \
+    lua-resty-openssl \
     lua-resty-string; \
   # Remove default config
   rm -f /etc/nginx/http.d/default.conf; \
