@@ -15,7 +15,8 @@ RUN set -eux; \
     nginx-mod-http-geoip2 \
     nginx-mod-http-lua \
     nginx-mod-http-zstd \
-    lua-resty-http; \
+    lua-resty-http \
+    lua-resty-string; \
   # Remove default config
   rm -f /etc/nginx/http.d/default.conf; \
   # Remove default /var/www content
