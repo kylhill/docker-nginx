@@ -28,6 +28,14 @@ if [ -n "${API_KEY}" ] && [ -n "${CROWDSEC_LAPI_URL:-}" ]; then
     sed -i "s|^CAPTCHA_PROVIDER=.*|CAPTCHA_PROVIDER=|" \
         /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf
 
+    # stream mode: local cache lookup per-request, no per-request LAPI calls
+    sed -i "s|^MODE=.*|MODE=stream|" \
+        /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf
+
+    # fail fast if LAPI is unreachable (default 3s adds latency on every miss in live mode)
+    sed -i "s|^REQUEST_TIMEOUT=.*|REQUEST_TIMEOUT=500|" \
+        /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf
+
     if [ -n "${CROWDSEC_APPSEC_URL:-}" ]; then
         sed -i "s|^APPSEC_URL=.*|APPSEC_URL=${CROWDSEC_APPSEC_URL}|" \
             /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf
