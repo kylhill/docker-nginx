@@ -71,6 +71,11 @@ RUN set -eux; \
     cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/lib/crowdsec.lua /usr/local/lua/crowdsec/; \
     cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/lib/plugins/crowdsec/*.lua /usr/local/lua/crowdsec/plugins/crowdsec/; \
     \
+    # Alpine's lua-cjson lacks cjson.array_mt, causing feature_flags to serialize
+    # as {} instead of the []string expected by CrowdSec. Omit the optional field.
+    sed -i '/remediation_component\["feature_flags"\] = setmetatable({}, cjson.array_mt)/d' \
+        /usr/local/lua/crowdsec/plugins/crowdsec/metrics.lua; \
+    \
     # patch captcha plugin to return gracefully (no error) when no provider is configured,
     # so nginx starts cleanly without the "no recaptcha site key" error log
     sed -i 's|function M.New(siteKey, secretKey, TemplateFilePath, captcha_provider, ret_code)|function M.New(siteKey, secretKey, TemplateFilePath, captcha_provider, ret_code)\n    if captcha_provider == nil or captcha_provider == "" then\n        return\n    end|' \
