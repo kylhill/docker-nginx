@@ -1,5 +1,6 @@
 # Inspired by https://github.com/linuxserver/docker-baseimage-alpine-nginx/blob/master/Dockerfile
-FROM ghcr.io/linuxserver/baseimage-alpine:3.23
+ARG BASE_IMAGE=ghcr.io/linuxserver/baseimage-alpine:3.23
+FROM ${BASE_IMAGE}
 
 LABEL org.opencontainers.image.title="docker-nginx" \
       org.opencontainers.image.url="https://github.com/kylhill/docker-nginx" \
