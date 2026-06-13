@@ -1,4 +1,4 @@
-# Copilot Instructions
+# Repository Agent Instructions
 
 ## Build Commands
 
