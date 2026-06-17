@@ -23,6 +23,20 @@ RUN set -eux; \
   # Remove default /var/www content
   find /var/www -mindepth 1 ! -path /var/www/favicon.ico -exec rm -rf {} +;
 
+# lua-resty-string is required at runtime by lua-resty-http (http_connect.lua),
+# but its Alpine package depends on openresty-mod-http-lua which conflicts with
+# nginx. Install the pure-Lua source directly from GitHub instead.
+# Version pinned to match the Alpine 3.24 package (lua-resty-string-0.15-r1).
+RUN set -eux; \
+    apk add --no-cache --virtual .lua-build-deps curl tar ca-certificates; \
+    curl -L -o /tmp/lua-resty-string.tar.gz \
+      "https://github.com/openresty/lua-resty-string/archive/refs/tags/v0.15.tar.gz"; \
+    tar -xzf /tmp/lua-resty-string.tar.gz -C /tmp; \
+    mkdir -p /usr/share/lua/common/resty; \
+    cp /tmp/lua-resty-string-0.15/lib/resty/*.lua /usr/share/lua/common/resty/; \
+    rm -rf /tmp/*; \
+    apk del .lua-build-deps
+
 # install latest geoipupdate release from GitHub
 RUN set -eux; \
     apk add --no-cache --virtual .build-deps curl jq tar ca-certificates; \
