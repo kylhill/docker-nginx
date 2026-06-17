@@ -47,7 +47,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BASE_IMAGE="ghcr.io/linuxserver/baseimage-alpine:3.23"
+          BASE_IMAGE="ghcr.io/linuxserver/baseimage-alpine:3.24"
 
           BASE_DIGEST="$(docker buildx imagetools inspect "${BASE_IMAGE}" \
             | sed -n 's/^Digest:[[:space:]]*//p' | head -n1)"
