@@ -17,26 +17,11 @@ RUN set -eux; \
     nginx-mod-http-lua \
     nginx-mod-http-zstd \
     lua-resty-http \
-    lua-resty-openssl \
     lua5.1-cjson; \
   # Remove default config
   rm -f /etc/nginx/http.d/default.conf; \
   # Remove default /var/www content
   find /var/www -mindepth 1 ! -path /var/www/favicon.ico -exec rm -rf {} +;
-
-# lua-resty-string depends on openresty-mod-http-lua in Alpine 3.24, which
-# conflicts with nginx. Install the pure-Lua source directly from GitHub instead.
-RUN set -eux; \
-    apk add --no-cache --virtual .lua-build-deps curl jq tar ca-certificates; \
-    RESTY_STRING_VER="$(curl -s https://api.github.com/repos/openresty/lua-resty-string/releases/latest | jq -r .tag_name)"; \
-    echo "Latest lua-resty-string release: $RESTY_STRING_VER"; \
-    curl -L -o /tmp/lua-resty-string.tar.gz \
-      "https://github.com/openresty/lua-resty-string/archive/refs/tags/${RESTY_STRING_VER}.tar.gz"; \
-    tar -xzf /tmp/lua-resty-string.tar.gz -C /tmp; \
-    mkdir -p /usr/share/lua/5.1/resty; \
-    cp /tmp/lua-resty-string-${RESTY_STRING_VER#v}/lib/resty/*.lua /usr/share/lua/5.1/resty/; \
-    rm -rf /tmp/*; \
-    apk del .lua-build-deps
 
 # install latest geoipupdate release from GitHub
 RUN set -eux; \
