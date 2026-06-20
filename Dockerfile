@@ -103,9 +103,9 @@ RUN set -eux; \
     mkdir -p /var/lib/crowdsec/lua/templates; \
     cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/templates/ban.html /var/lib/crowdsec/lua/templates/; \
     \
-    # the nginx http.d crowdsec.conf is maintained in root/defaults/nginx/http.d/crowdsec.conf
-    # and deployed via COPY root/ / below; create the dir so COPY can write into it
-    mkdir -p /defaults/nginx/http.d; \
+    # the nginx CrowdSec include is deployed via COPY root/ / below and copied into
+    # /config/nginx/http.d at runtime only when bouncer credentials are provided
+    mkdir -p /defaults/nginx/templates; \
     \
     # install bouncer config template (contains ${CROWDSEC_LAPI_URL} and ${API_KEY}
     # placeholders that cont-init.d/20-crowdsec-bouncer substitutes at startup)

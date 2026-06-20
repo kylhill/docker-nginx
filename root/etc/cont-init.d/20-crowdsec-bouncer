@@ -14,9 +14,12 @@ read_secret() {
 }
 
 API_KEY="$(read_secret CROWDSEC_NGINX_API_KEY)"
+NGINX_CROWDSEC_CONF="/config/nginx/http.d/crowdsec.conf"
 
 if [ -n "${API_KEY}" ] && [ -n "${CROWDSEC_LAPI_URL:-}" ]; then
     echo "Configuring CrowdSec nginx bouncer..."
+
+    mkdir -p /config/nginx/http.d
 
     sed \
         -e "s|\${CROWDSEC_LAPI_URL}|${CROWDSEC_LAPI_URL}|g" \
@@ -40,6 +43,9 @@ if [ -n "${API_KEY}" ] && [ -n "${CROWDSEC_LAPI_URL:-}" ]; then
         sed -i "s|^APPSEC_URL=.*|APPSEC_URL=${CROWDSEC_APPSEC_URL}|" \
             /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf
     fi
+
+    cp /defaults/nginx/templates/crowdsec.conf "${NGINX_CROWDSEC_CONF}"
 else
-    echo "CrowdSec credentials not set, skipping bouncer configuration."
+    rm -f "${NGINX_CROWDSEC_CONF}" /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf
+    echo "CrowdSec credentials not set, nginx bouncer disabled."
 fi
