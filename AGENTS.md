@@ -8,9 +8,6 @@ docker build -t docker-nginx .
 
 # Build multi-platform (as CI does)
 docker buildx build --platform linux/amd64,linux/arm64 -t docker-nginx .
-
-# Build explicit aarch64 image
-docker build -f Dockerfile.aarch64 -t docker-nginx:aarch64 .
 ```
 
 There are no automated tests. Nginx config validation runs at container startup via `nginx -t`.
@@ -80,10 +77,9 @@ Files placed in `/config/nginx/site-confs/` **must be named `*.subdomain.conf`**
 
 All three support the `_FILE` suffix pattern for Docker secrets (e.g., `GEOIPUPDATE_LICENSE_KEY_FILE=/run/secrets/maxmind_key`).
 
-### Two Dockerfiles
+### Dockerfile
 
-- `Dockerfile` — used by CI for multi-platform builds (amd64 + arm64 via buildx). Also cleans up `/var/www` default content.
-- `Dockerfile.aarch64` — explicit arm64 base image; does **not** remove `/var/www` content.
+`Dockerfile` is used for both local and CI builds. CI builds a multi-platform image for amd64 and arm64 via buildx, and the Dockerfile cleans up default `/var/www` content for all platforms.
 
 ### CI / Publishing
 
