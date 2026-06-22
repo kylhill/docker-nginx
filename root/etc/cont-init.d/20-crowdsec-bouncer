@@ -19,6 +19,8 @@ BOUNCER_CONF_TEMPLATE="/etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf.templa
 NGINX_CROWDSEC_INCLUDE="/config/nginx/http.d/crowdsec.conf"
 NGINX_CROWDSEC_INCLUDE_DEFAULT="/defaults/nginx/templates/crowdsec.conf"
 
+rm -f "${NGINX_CROWDSEC_INCLUDE}" "${BOUNCER_CONF}"
+
 if [ -n "${API_KEY}" ] && [ -n "${CROWDSEC_LAPI_URL:-}" ]; then
     echo "Configuring CrowdSec nginx bouncer..."
 
@@ -55,6 +57,5 @@ if [ -n "${API_KEY}" ] && [ -n "${CROWDSEC_LAPI_URL:-}" ]; then
 
     install -m 0644 "${NGINX_CROWDSEC_INCLUDE_DEFAULT}" "${NGINX_CROWDSEC_INCLUDE}"
 else
-    rm -f "${NGINX_CROWDSEC_INCLUDE}" "${BOUNCER_CONF}"
     echo "CrowdSec credentials not set, nginx bouncer disabled."
 fi
