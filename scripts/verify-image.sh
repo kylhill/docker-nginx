@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+IMAGE="${IMAGE:-docker-nginx:verify}"
+CONTAINER="${CONTAINER:-docker-nginx-verify-$$}"
+DOCKERFILE="${DOCKERFILE:-Dockerfile}"
+BUILD_CONTEXT="${BUILD_CONTEXT:-.}"
+RUN_SECONDS="${RUN_SECONDS:-8}"
+LOG_ERROR_REGEX="${LOG_ERROR_REGEX:-\\b(emerg|alert|crit|fatal|error|failed)\\b}"
+KEEP_CONTAINER="${KEEP_CONTAINER:-0}"
+
+CONFIG_VOLUME="${CONFIG_VOLUME:-${CONTAINER}-config}"
+LOG_FILE="$(mktemp)"
+
+cleanup() {
+    if [ "${KEEP_CONTAINER}" != "1" ]; then
+        docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true
+        docker volume rm "${CONFIG_VOLUME}" >/dev/null 2>&1 || true
+    fi
+    rm -f "${LOG_FILE}"
+}
+trap cleanup EXIT
+
+echo "Building ${IMAGE} from ${DOCKERFILE}..."
+docker build -t "${IMAGE}" -f "${DOCKERFILE}" "${BUILD_CONTEXT}"
+
+docker volume create "${CONFIG_VOLUME}" >/dev/null
+
+echo "Starting ${CONTAINER} with temporary /config..."
+docker run -d \
+    --name "${CONTAINER}" \
+    -v "${CONFIG_VOLUME}:/config" \
+    "${IMAGE}" >/dev/null
+
+for ((i = 0; i < RUN_SECONDS; i++)); do
+    if [ "$(docker inspect -f '{{.State.Running}}' "${CONTAINER}" 2>/dev/null || true)" != "true" ]; then
+        echo "Container exited before smoke window completed." >&2
+        docker logs "${CONTAINER}" >&2 || true
+        exit 1
+    fi
+    sleep 1
+done
+
+echo "Validating nginx config inside running container..."
+docker exec "${CONTAINER}" nginx -t
+
+echo "Checking CrowdSec Lua modules can be loaded by nginx..."
+docker exec "${CONTAINER}" sh -lc 'cat > /tmp/crowdsec-lua-load-test.conf <<'"'"'EOF'"'"'
+include /etc/nginx/modules/*.conf;
+events {}
+http {
+    lua_package_path "/usr/local/lua/crowdsec/?.lua;/usr/local/share/lua/5.1/?.lua;/usr/local/share/lua/5.1/?/init.lua;;";
+    lua_package_cpath "/usr/local/lib/lua/5.1/?.so;;";
+    lua_shared_dict crowdsec_cache 1m;
+    init_by_lua_block {
+        require "cjson"
+        require "resty.http"
+        require "crowdsec"
+    }
+}
+EOF
+nginx -t -c /tmp/crowdsec-lua-load-test.conf'
+
+docker logs "${CONTAINER}" >"${LOG_FILE}" 2>&1 || true
+if grep -Eiq "${LOG_ERROR_REGEX}" "${LOG_FILE}"; then
+    echo "Container logs matched error regex: ${LOG_ERROR_REGEX}" >&2
+    cat "${LOG_FILE}" >&2
+    exit 1
+fi
+
+echo "Smoke verification passed: container stayed running for ${RUN_SECONDS}s and logs had no error matches."

@@ -15,27 +15,22 @@ RUN set -eux; \
     nginx-mod-http-brotli \
     nginx-mod-http-geoip2 \
     nginx-mod-http-lua \
-    nginx-mod-http-zstd \
-    lua-resty-http \
-    lua-resty-openssl \
-    lua5.1-cjson; \
+    nginx-mod-http-zstd; \
   # Remove default config
   rm -f /etc/nginx/http.d/default.conf; \
   # Remove default /var/www content
   find /var/www -mindepth 1 ! -path /var/www/favicon.ico -exec rm -rf {} +;
 
-# lua-resty-string is required at runtime by lua-resty-http (http_connect.lua),
-# but its Alpine package depends on openresty-mod-http-lua which conflicts with
-# nginx. Install the pure-Lua source directly from GitHub instead.
-# Version pinned to match the Alpine 3.24 package (lua-resty-string-0.15-r1).
+# Install Lua dependencies the same way upstream's Ubuntu installer does.
+# See https://github.com/crowdsecurity/cs-nginx-bouncer/blob/main/install.sh
 RUN set -eux; \
-    apk add --no-cache --virtual .lua-build-deps curl tar ca-certificates; \
-    curl -L -o /tmp/lua-resty-string.tar.gz \
-      "https://github.com/openresty/lua-resty-string/archive/refs/tags/v0.15.tar.gz"; \
-    tar -xzf /tmp/lua-resty-string.tar.gz -C /tmp; \
-    mkdir -p /usr/share/lua/common/resty; \
-    cp /tmp/lua-resty-string-0.15/lib/resty/*.lua /usr/share/lua/common/resty/; \
-    rm -rf /tmp/*; \
+    apk add --no-cache --virtual .lua-build-deps \
+      build-base \
+      ca-certificates \
+      lua5.1-dev \
+      luarocks5.1; \
+    luarocks-5.1 install lua-resty-http 0.17.1-0; \
+    luarocks-5.1 install lua-cjson 2.1.0.10-1; \
     apk del .lua-build-deps
 
 # install latest geoipupdate release from GitHub
@@ -63,7 +58,7 @@ RUN set -eux; \
     mv /tmp/geoipupdate_*_linux_${ARCH}/geoipupdate /usr/local/bin/geoipupdate; \
     chmod +x /usr/local/bin/geoipupdate; \
     \
-    # cleanup temp files and remove build deps
+    # cleanup
     rm -rf /tmp/*; \
     apk del .build-deps
 
@@ -85,30 +80,8 @@ RUN set -eux; \
     cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/lib/crowdsec.lua /usr/local/lua/crowdsec/; \
     cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/lib/plugins/crowdsec/*.lua /usr/local/lua/crowdsec/plugins/crowdsec/; \
     \
-    # Alpine's lua-cjson lacks cjson.array_mt, causing feature_flags to serialize
-    # as {} instead of the []string expected by CrowdSec. Omit the optional field.
-    sed -i '/remediation_component\["feature_flags"\] = setmetatable({}, cjson.array_mt)/d' \
-        /usr/local/lua/crowdsec/plugins/crowdsec/metrics.lua; \
-    \
-    # patch captcha plugin to return gracefully (no error) when no provider is configured,
-    # so nginx starts cleanly without the "no recaptcha site key" error log
-    sed -i 's|function M.New(siteKey, secretKey, TemplateFilePath, captcha_provider, ret_code)|function M.New(siteKey, secretKey, TemplateFilePath, captcha_provider, ret_code)\n    if captcha_provider == nil or captcha_provider == "" then\n        return\n    end|' \
-        /usr/local/lua/crowdsec/plugins/crowdsec/captcha.lua; \
-    \
-    # downgrade "APPSEC is enabled" from ERR to INFO - it's an informational startup message
-    sed -i 's|ngx.log(ngx.ERR, "APPSEC is enabled|ngx.log(ngx.INFO, "APPSEC is enabled|' \
-        /usr/local/lua/crowdsec/crowdsec.lua; \
-    \
-    # install ban HTML template only (no captcha)
-    mkdir -p /var/lib/crowdsec/lua/templates; \
-    cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/templates/ban.html /var/lib/crowdsec/lua/templates/; \
-    \
-    # the nginx CrowdSec include is deployed via COPY root/ / below and copied into
-    # /config/nginx/http.d at runtime only when bouncer credentials are provided
-    mkdir -p /defaults/nginx/templates; \
-    \
-    # install bouncer config template (contains ${CROWDSEC_LAPI_URL} and ${API_KEY}
-    # placeholders that cont-init.d/20-crowdsec-bouncer substitutes at startup)
+    # install bouncer config template adjusted by cont-init.d/20-crowdsec-bouncer
+    # at startup
     mkdir -p /etc/crowdsec/bouncers; \
     cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/config_example.conf \
         /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf.template; \

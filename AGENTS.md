@@ -10,7 +10,14 @@ docker build -t docker-nginx .
 docker buildx build --platform linux/amd64,linux/arm64 -t docker-nginx .
 ```
 
-There are no automated tests. Nginx config validation runs at container startup via `nginx -t`.
+## Verification
+
+```bash
+# Build the image, start a temporary container, run nginx validation, and scan logs
+scripts/verify-image.sh
+```
+
+There are no unit tests. `scripts/verify-image.sh` is the smoke test to run after Dockerfile, nginx config, or container startup changes. It builds the image, starts it with a temporary `/config` Docker volume, runs `nginx -t`, checks the CrowdSec Lua modules can be loaded by nginx, and fails if startup logs contain error-level patterns.
 
 ## Architecture
 
