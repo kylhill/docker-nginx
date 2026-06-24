@@ -1,5 +1,7 @@
 .git
 .gitignore
 .github
+scripts/
+AGENTS.md
 README.md
 LICENSE
