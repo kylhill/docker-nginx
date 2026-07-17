@@ -53,13 +53,17 @@ RUN set -eux; \
       *) echo "Unsupported arch $ARCH"; exit 1;; \
     esac; \
     \
-    # get latest release tag from GitHub API
-    GEOIPUPDATE_LATEST="$(curl -fsSL https://api.github.com/repos/maxmind/geoipupdate/releases/latest | jq -er .tag_name)"; \
+    # resolve the latest release asset and its GitHub-provided digest
+    GEOIPUPDATE_RELEASE="$(curl -fsSL https://api.github.com/repos/maxmind/geoipupdate/releases/latest)"; \
+    GEOIPUPDATE_LATEST="$(printf '%s' "$GEOIPUPDATE_RELEASE" | jq -er .tag_name)"; \
+    GEOIPUPDATE_ASSET="geoipupdate_${GEOIPUPDATE_LATEST#v}_linux_${ARCH}.tar.gz"; \
+    GEOIPUPDATE_URL="$(printf '%s' "$GEOIPUPDATE_RELEASE" | jq -er --arg asset "$GEOIPUPDATE_ASSET" '.assets[] | select(.name == $asset) | .browser_download_url')"; \
+    GEOIPUPDATE_SHA256="$(printf '%s' "$GEOIPUPDATE_RELEASE" | jq -er --arg asset "$GEOIPUPDATE_ASSET" '.assets[] | select(.name == $asset) | .digest | select(startswith("sha256:")) | sub("^sha256:"; "")')"; \
     echo "Latest GeoIPUpdate release: $GEOIPUPDATE_LATEST"; \
     \
-    # download tar.gz for the architecture
-    curl -fsSL -o /tmp/geoipupdate.tar.gz \
-      "https://github.com/maxmind/geoipupdate/releases/download/${GEOIPUPDATE_LATEST}/geoipupdate_${GEOIPUPDATE_LATEST#v}_linux_${ARCH}.tar.gz"; \
+    # download and verify the tar.gz for the architecture
+    curl -fsSL -o /tmp/geoipupdate.tar.gz "$GEOIPUPDATE_URL"; \
+    printf '%s  %s\n' "$GEOIPUPDATE_SHA256" /tmp/geoipupdate.tar.gz | sha256sum -c -; \
     \
     # extract binary and move to /usr/local/bin
     tar -xzf /tmp/geoipupdate.tar.gz -C /tmp; \
@@ -78,13 +82,17 @@ RUN set -eux; \
       tar \
       ca-certificates; \
     \
-    # get latest release tag from GitHub API
-    BOUNCER_LATEST="$(curl -fsSL https://api.github.com/repos/crowdsecurity/cs-nginx-bouncer/releases/latest | jq -er .tag_name)"; \
+    # resolve the latest release asset and its GitHub-provided digest
+    BOUNCER_RELEASE="$(curl -fsSL https://api.github.com/repos/crowdsecurity/cs-nginx-bouncer/releases/latest)"; \
+    BOUNCER_LATEST="$(printf '%s' "$BOUNCER_RELEASE" | jq -er .tag_name)"; \
+    BOUNCER_ASSET="crowdsec-nginx-bouncer.tgz"; \
+    BOUNCER_URL="$(printf '%s' "$BOUNCER_RELEASE" | jq -er --arg asset "$BOUNCER_ASSET" '.assets[] | select(.name == $asset) | .browser_download_url')"; \
+    BOUNCER_SHA256="$(printf '%s' "$BOUNCER_RELEASE" | jq -er --arg asset "$BOUNCER_ASSET" '.assets[] | select(.name == $asset) | .digest | select(startswith("sha256:")) | sub("^sha256:"; "")')"; \
     echo "Latest crowdsec-nginx-bouncer release: $BOUNCER_LATEST"; \
     \
-    # download and extract the bouncer tarball
-    curl -fsSL -o /tmp/bouncer.tgz \
-      "https://github.com/crowdsecurity/cs-nginx-bouncer/releases/download/${BOUNCER_LATEST}/crowdsec-nginx-bouncer.tgz"; \
+    # download, verify, and extract the bouncer tarball
+    curl -fsSL -o /tmp/bouncer.tgz "$BOUNCER_URL"; \
+    printf '%s  %s\n' "$BOUNCER_SHA256" /tmp/bouncer.tgz | sha256sum -c -; \
     tar -xzf /tmp/bouncer.tgz -C /tmp; \
     \
     # install Lua library files
