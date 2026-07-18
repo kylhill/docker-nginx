@@ -2,6 +2,9 @@
 # shellcheck shell=bash
 set -e
 
+# Keep generated bouncer credentials private to root and the nginx user.
+umask 077
+
 read_secret() {
     var="$1"
     file_var="${var}_FILE"
@@ -54,6 +57,9 @@ if [ -n "${API_KEY}" ] && [ -n "${CROWDSEC_LAPI_URL:-}" ]; then
          }' \
         "${BOUNCER_CONF_TEMPLATE}" \
         > "${BOUNCER_CONF}"
+
+    chown abc:abc "${BOUNCER_CONF}"
+    chmod 0600 "${BOUNCER_CONF}"
 
     install -m 0644 "${NGINX_CROWDSEC_INCLUDE_DEFAULT}" "${NGINX_CROWDSEC_INCLUDE}"
 else

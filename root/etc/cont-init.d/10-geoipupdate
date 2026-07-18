@@ -1,6 +1,9 @@
 #!/usr/bin/with-contenv bash
 set -e
 
+# Protect the MaxMind license key written to /etc/GeoIP.conf.
+umask 077
+
 read_secret() {
   var="$1"
   file_var="${var}_FILE"
@@ -25,6 +28,7 @@ AccountID ${ACCOUNT_ID}
 LicenseKey ${LICENSE_KEY}
 EditionIDs ${GEOIPUPDATE_EDITION_IDS}
 EOF
+  chmod 0600 /etc/GeoIP.conf
 
   echo "Running geoipupdate..."
   if ! /usr/local/bin/geoipupdate -f /etc/GeoIP.conf -d /config/geoip; then

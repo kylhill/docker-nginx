@@ -53,5 +53,5 @@ Adjust or remove those shared includes in `/config/nginx/snippets/` to fit your 
 ## Notes
 
 - `geoipupdate` runs during container initialization when `GEOIPUPDATE_ACCOUNT_ID` and `GEOIPUPDATE_LICENSE_KEY` are set.
-- The image exposes ports `80` and `443`.
+- The image exposes `80/tcp`, `443/tcp`, and `443/udp`. Publish both TCP and UDP port 443 to use HTTP/3/QUIC.
 - Compression defaults include gzip, Brotli, and Zstandard modules.

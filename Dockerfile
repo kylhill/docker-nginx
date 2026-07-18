@@ -133,5 +133,5 @@ ENV GEOIPUPDATE_EDITION_IDS="GeoLite2-Country"
 COPY root/ /
 
 # ports and volumes
-EXPOSE 80 443
+EXPOSE 80/tcp 443/tcp 443/udp
 VOLUME /config
