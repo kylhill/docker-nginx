@@ -3,9 +3,11 @@ ARG BASE_IMAGE=ghcr.io/linuxserver/baseimage-alpine:3.24
 FROM ${BASE_IMAGE}
 
 LABEL org.opencontainers.image.title="docker-nginx" \
+      org.opencontainers.image.description="nginx reverse proxy on linuxserver.io Alpine base image" \
       org.opencontainers.image.url="https://github.com/kylhill/docker-nginx" \
       org.opencontainers.image.source="https://github.com/kylhill/docker-nginx" \
-      org.opencontainers.image.documentation="https://github.com/kylhill/docker-nginx"
+      org.opencontainers.image.documentation="https://github.com/kylhill/docker-nginx" \
+      org.opencontainers.image.licenses="GPL-3.0-only"
 
 # install packages
 RUN set -eux; \
@@ -30,75 +32,67 @@ RUN set -eux; \
       musl-dev; \
     \
     # install Lua dependencies for crowdsec-nginx-bouncer
-    luarocks-5.1 install lua-resty-http 0.17.1-0; \
-    luarocks-5.1 install lua-cjson 2.1.0.10-1; \
+    luarocks-5.1 install lua-resty-http; \
+    luarocks-5.1 install lua-cjson; \
     \
     # # cleanup
     rm -rf /tmp/*; \
     apk del .lua-build-deps
 
-# install latest geoipupdate release from GitHub
+# Install GeoIPUpdate
+ARG GEOIPUPDATE_VERSION=8.0.0
+ARG GEOIPUPDATE_AMD64_SHA256=941eb4dd8c1eafb6ee1d56ccd5f4c62ffbdaca5f65a9f9cadc4008c8d805f2a2
+ARG GEOIPUPDATE_ARM64_SHA256=76cedc3bad8b5f02a3ea42ac84c57d318a758377a07806f7a13189a382f16308
 RUN set -eux; \
     apk add --no-cache --virtual .geoip-build-deps \
       curl \
-      jq \
       tar \
       ca-certificates; \
     \
     # detect architecture for GitHub release
-    ARCH="$(apk --print-arch)"; \
-    case "$ARCH" in \
-      x86_64) ARCH="amd64";; \
-      aarch64) ARCH="arm64";; \
-      *) echo "Unsupported arch $ARCH"; exit 1;; \
+    case "$(apk --print-arch)" in \
+      x86_64) RELEASE_ARCH="amd64"; GEOIPUPDATE_SHA256="$GEOIPUPDATE_AMD64_SHA256";; \
+      aarch64) RELEASE_ARCH="arm64"; GEOIPUPDATE_SHA256="$GEOIPUPDATE_ARM64_SHA256";; \
+      *) echo "Unsupported architecture"; exit 1;; \
     esac; \
     \
-    # resolve the latest release asset and its GitHub-provided digest
-    GEOIPUPDATE_RELEASE="$(curl -fsSL https://api.github.com/repos/maxmind/geoipupdate/releases/latest)"; \
-    GEOIPUPDATE_LATEST="$(printf '%s' "$GEOIPUPDATE_RELEASE" | jq -er .tag_name)"; \
-    GEOIPUPDATE_ASSET="geoipupdate_${GEOIPUPDATE_LATEST#v}_linux_${ARCH}.tar.gz"; \
-    GEOIPUPDATE_URL="$(printf '%s' "$GEOIPUPDATE_RELEASE" | jq -er --arg asset "$GEOIPUPDATE_ASSET" '.assets[] | select(.name == $asset) | .browser_download_url')"; \
-    GEOIPUPDATE_SHA256="$(printf '%s' "$GEOIPUPDATE_RELEASE" | jq -er --arg asset "$GEOIPUPDATE_ASSET" '.assets[] | select(.name == $asset) | .digest | select(startswith("sha256:")) | sub("^sha256:"; "")')"; \
-    echo "Latest GeoIPUpdate release: $GEOIPUPDATE_LATEST"; \
-    \
     # download and verify the tar.gz for the architecture
-    curl -fsSL -o /tmp/geoipupdate.tar.gz "$GEOIPUPDATE_URL"; \
+    curl -fsSL -o /tmp/geoipupdate.tar.gz \
+      "https://github.com/maxmind/geoipupdate/releases/download/v${GEOIPUPDATE_VERSION}/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${RELEASE_ARCH}.tar.gz"; \
     printf '%s  %s\n' "$GEOIPUPDATE_SHA256" /tmp/geoipupdate.tar.gz | sha256sum -c -; \
     \
     # extract binary and move to /usr/local/bin
     tar -xzf /tmp/geoipupdate.tar.gz -C /tmp; \
-    mv /tmp/geoipupdate_*_linux_${ARCH}/geoipupdate /usr/local/bin/geoipupdate; \
+    mv /tmp/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${RELEASE_ARCH}/geoipupdate /usr/local/bin/geoipupdate; \
     chmod +x /usr/local/bin/geoipupdate; \
     \
     # cleanup
     rm -rf /tmp/*; \
     apk del .geoip-build-deps
 
-# install latest crowdsec-nginx-bouncer Lua module from GitHub
+# Install CrowdSec nginx bouncer
+ARG CROWDSEC_BOUNCER_VERSION=1.1.6
+ARG CROWDSEC_BOUNCER_SHA256=323c6bd182cda2221d5b2d3d21b7e5e0b66ec77dd306a37299916617c3d50eea
+LABEL io.github.kylhill.docker-nginx.geoipupdate.version="${GEOIPUPDATE_VERSION}" \
+      io.github.kylhill.docker-nginx.crowdsec-bouncer.version="${CROWDSEC_BOUNCER_VERSION}"
 RUN set -eux; \
     apk add --no-cache --virtual .crowdsec-build-deps \
       curl \
-      jq \
       tar \
       ca-certificates; \
     \
-    # resolve the latest release asset and its GitHub-provided digest
-    BOUNCER_RELEASE="$(curl -fsSL https://api.github.com/repos/crowdsecurity/cs-nginx-bouncer/releases/latest)"; \
-    BOUNCER_LATEST="$(printf '%s' "$BOUNCER_RELEASE" | jq -er .tag_name)"; \
-    BOUNCER_ASSET="crowdsec-nginx-bouncer.tgz"; \
-    BOUNCER_URL="$(printf '%s' "$BOUNCER_RELEASE" | jq -er --arg asset "$BOUNCER_ASSET" '.assets[] | select(.name == $asset) | .browser_download_url')"; \
-    BOUNCER_SHA256="$(printf '%s' "$BOUNCER_RELEASE" | jq -er --arg asset "$BOUNCER_ASSET" '.assets[] | select(.name == $asset) | .digest | select(startswith("sha256:")) | sub("^sha256:"; "")')"; \
-    echo "Latest crowdsec-nginx-bouncer release: $BOUNCER_LATEST"; \
-    \
     # download, verify, and extract the bouncer tarball
-    curl -fsSL -o /tmp/bouncer.tgz "$BOUNCER_URL"; \
-    printf '%s  %s\n' "$BOUNCER_SHA256" /tmp/bouncer.tgz | sha256sum -c -; \
+    curl -fsSL -o /tmp/bouncer.tgz \
+      "https://github.com/crowdsecurity/cs-nginx-bouncer/releases/download/v${CROWDSEC_BOUNCER_VERSION}/crowdsec-nginx-bouncer.tgz"; \
+    printf '%s  %s\n' "$CROWDSEC_BOUNCER_SHA256" /tmp/bouncer.tgz | sha256sum -c -; \
     tar -xzf /tmp/bouncer.tgz -C /tmp; \
     \
     # install Lua library files
     mkdir -p /usr/local/lua/crowdsec/plugins/crowdsec; \
     cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/lib/crowdsec.lua /usr/local/lua/crowdsec/; \
     cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/lib/plugins/crowdsec/*.lua /usr/local/lua/crowdsec/plugins/crowdsec/; \
+    printf 'return "%s"\n' "$CROWDSEC_BOUNCER_VERSION" \
+        > /usr/local/lua/crowdsec/bouncer_version.lua; \
     \
     # patch captcha plugin to return gracefully (no error) when no provider is configured,
     # so nginx starts cleanly without the "no recaptcha site key" error log

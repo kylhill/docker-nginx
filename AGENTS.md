@@ -27,7 +27,7 @@ This is a Docker image that packages nginx on top of the [linuxserver.io Alpine 
 
 Everything under `root/` is copied directly onto the container filesystem at `/` by the `COPY root/ /` instruction. Two subtrees matter:
 
-- **`root/defaults/nginx/`** — Shipped default nginx config. Copied non-destructively into `/config/nginx/` at container startup via `cp -ru`, so user-modified files in `/config/` are never overwritten on upgrade.
+- **`root/defaults/nginx/`** — Shipped default nginx config. Merged into `/config/nginx/` at container startup via `cp -ru`; a shipped file can replace an older destination file based on modification time, so config migration behavior must be reviewed carefully.
 - **`root/etc/s6-overlay/s6-rc.d/`** — s6 service and init definitions.
 
 ### s6 init chain
@@ -90,4 +90,4 @@ All three support the `_FILE` suffix pattern for Docker secrets (e.g., `GEOIPUPD
 
 ### CI / Publishing
 
-Pushes to `main` trigger `.github/workflows/docker-publish.yml`, which builds and pushes a multi-platform manifest to `ghcr.io/kylhill/docker-nginx` tagged as both `latest` and the commit SHA.
+Pushes to `main` always trigger a fresh smoke-tested multi-platform publish. Daily scheduled runs compare the current upstream LinuxServer manifest digest with the digest recorded on `latest` and build only when it changed. Alpine packages and Lua rocks float at build time; GeoIPUpdate and the CrowdSec bouncer are fixed and checksum-verified. GitHub Actions remain pinned to immutable commit SHAs. Images are tagged as both `latest` and a source/run-specific rollback tag, with SBOM and provenance attestations attached.

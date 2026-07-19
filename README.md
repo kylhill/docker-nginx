@@ -50,6 +50,10 @@ Adjust or remove those shared includes in `/config/nginx/snippets/` to fit your 
 - `/config/keys/`: TLS certificates and private keys
 - `/config/geoip/`: GeoIP database download location
 
+## Dependency Updates
+
+The image follows the newest upstream LinuxServer Alpine tag and resolves current Alpine packages and Lua rocks during each fresh CI build. GeoIPUpdate and the CrowdSec nginx bouncer are fixed to reviewed versions and checksums in the Dockerfile. Published images include SBOM and provenance attestations, and source/run-specific tags provide rollback targets for scheduled rebuilds.
+
 ## Notes
 
 - `geoipupdate` runs during container initialization when `GEOIPUPDATE_ACCOUNT_ID` and `GEOIPUPDATE_LICENSE_KEY` are set.
