@@ -57,6 +57,18 @@ The entrypoint is `/etc/nginx/nginx.conf`, which simply includes `/config/nginx/
 
 ## Key Conventions
 
+### Shipped config version headers
+
+Every shipped nginx `.conf` under `root/defaults/nginx/` must begin with a
+`## Version YYYY/MM/DD` header. Whenever a shipped config is changed, update
+that file's version date as part of the same change. This is required even for
+small configuration changes so persisted `/config` users receive the startup
+warning and know to manually compare and reconcile the new default.
+
+Use the date of the change. If a version with that date has already been
+published, advance the header again before publishing; never ship different
+config contents under a previously published version string.
+
 ### Snippet composition for server blocks
 
 The `snippets/server-base.conf` is the canonical single include for HTTPS server blocks. It pulls in:
