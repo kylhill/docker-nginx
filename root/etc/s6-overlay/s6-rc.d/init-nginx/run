@@ -1,8 +1,16 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
 
-# Update default config files
-cp -ru /defaults/nginx/ /config/
+# Copy default config files only when they do not already exist. User-managed
+# files must never be replaced based on image or filesystem timestamps.
+while IFS= read -r -d '' source; do
+    relative_path="${source#/defaults/}"
+    destination="/config/${relative_path}"
+    if [ ! -e "${destination}" ]; then
+        mkdir -p "$(dirname "${destination}")"
+        cp "${source}" "${destination}"
+    fi
+done < <(find /defaults/nginx -type f -print0)
 
 echo "Validating nginx configuration..."
 /usr/sbin/nginx -t -e stderr 2>&1

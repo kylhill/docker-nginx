@@ -315,6 +315,8 @@ grep -Fq 'ALPN protocol: h3' "${TEST_ROOT}/quic.log" || {
 echo "Checking graceful shutdown and persisted /config..."
 docker exec "${TARGET}" sh -c \
     'printf "\\n# integration-persistence-marker\\n" >> /config/nginx/snippets/resolver.conf'
+docker exec "${TARGET}" sed -i \
+    '1s|2026/07/19|2020/01/01|' /config/nginx/snippets/resolver.conf
 
 docker exec "${TRUSTED_CLIENT}" curl -sS "http://${TARGET}:8080/slow" \
     >"${TEST_ROOT}/slow-response" &
@@ -338,6 +340,7 @@ docker run -d \
     -v "${CONFIG_VOLUME}:/config" \
     "${IMAGE}" >/dev/null
 wait_running "${PERSISTED_TARGET}"
+wait_for_log "${PERSISTED_TARGET}" 'different version dates'
 docker exec "${PERSISTED_TARGET}" grep -Fq \
     '# integration-persistence-marker' /config/nginx/snippets/resolver.conf ||
     fail "persisted configuration was overwritten"
