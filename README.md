@@ -9,12 +9,14 @@ This image packages nginx on top of the linuxserver Alpine base image and is int
 
 At container start, the default nginx config tree from `/defaults/nginx/` is
 copied into `/config/nginx/` only when active files do not already exist. The
-current shipped version of every config is also refreshed alongside the active
-file as `<name>.conf.sample`. Shipped configs carry dated `## Version` headers;
-when an active config's date differs from its sample, startup prints a
-reconciliation warning and leaves the active file unchanged. Compare the two
-files in the host-mounted `/config` directory and apply changes manually.
-The `.conf.sample` files are image-managed and are replaced on every startup.
+current shipped version of every config is refreshed alongside the active file
+as `<name>.conf.sample`. Exact active/sample matches are then removed, so a
+sample remains only when the persisted active config differs from the image
+default. Shipped configs carry dated `## Version` headers; when an active
+config's date differs from its sample, startup prints a reconciliation warning
+and leaves the active file unchanged. Compare the two files in the host-mounted
+`/config` directory and apply changes manually. Remaining `.conf.sample` files
+are image-managed and refreshed on every startup.
 The active resolver snippet is generated once from the nameservers in the
 container's `/etc/resolv.conf`; an existing `/config/nginx/snippets/resolver.conf`
 is never replaced.

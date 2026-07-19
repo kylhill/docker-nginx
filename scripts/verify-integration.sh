@@ -271,6 +271,7 @@ wait_for_log "${TARGET}" 'site configs are ignored because their names do not en
 docker exec "${TARGET}" sh -c '
     test -f /config/nginx/nginx.conf.sample
     test -f /config/nginx/snippets/resolver.conf.sample
+    test ! -e /config/nginx/snippets/static-assets.conf.sample
     test ! -e /config/nginx/obsolete.conf.sample
     cmp -s /defaults/nginx/nginx.conf /config/nginx/nginx.conf.sample
     cmp -s /defaults/nginx/snippets/resolver.conf /config/nginx/snippets/resolver.conf.sample

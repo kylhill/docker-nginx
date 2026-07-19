@@ -27,7 +27,7 @@ This is a Docker image that packages nginx on top of the [linuxserver.io Alpine 
 
 Everything under `root/` is copied directly onto the container filesystem at `/` by the `COPY root/ /` instruction. Two subtrees matter:
 
-- **`root/defaults/nginx/`** — Shipped default nginx config. Active files are copied into `/config/nginx/` only when absent, while current defaults are refreshed on every start as adjacent `.conf.sample` files. Each shipped config has a `## Version YYYY/MM/DD` header; startup compares active files with their samples and warns when reconciliation is needed.
+- **`root/defaults/nginx/`** — Shipped default nginx config. Active files are copied into `/config/nginx/` only when absent, while current defaults are refreshed on every start as adjacent `.conf.sample` files. Exact active/sample matches are removed after comparison, leaving samples only for differing persisted configs. Each shipped config has a `## Version YYYY/MM/DD` header; startup compares active files with their samples and warns when reconciliation is needed.
 - **`root/etc/s6-overlay/s6-rc.d/`** — s6 service and init definitions.
 
 ### s6 init chain
@@ -49,7 +49,7 @@ svc-nginx (long-running)
 - `init-geoipupdate`: downloads GeoIP databases when credentials are configured
 - `init-crowdsec`: generates the enabled CrowdSec runtime and nginx configuration
 - `init-permissions`: makes nginx configuration group-writable and sets root-mode ownership of `/config/**` to `abc:abc`
-- `init-version-checks`: warns about active/sample version mismatches and ignored site-conf filenames
+- `init-version-checks`: removes exact active/sample matches, warns about remaining version mismatches, and reports ignored site-conf filenames
 - `init-nginx-validate`: validates the completed configuration with `nginx -t`
 - `svc-nginx`: kills any zombie nginx processes then execs `nginx -e stderr`
 

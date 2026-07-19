@@ -9,6 +9,14 @@ while IFS= read -r -d '' active_config; do
         continue
     fi
 
+    # A sample only adds value when the persisted active config differs from
+    # the image default. Remove exact matches after the comparison sample has
+    # been refreshed by init-samples.
+    if cmp -s "${active_config}" "${sample_config}"; then
+        rm -f "${sample_config}"
+        continue
+    fi
+
     active_version="$(sed -nE 's|^## Version ([0-9]{4}/[0-9]{2}/[0-9]{2}).*|\1|p' "${active_config}")"
     sample_version="$(sed -nE 's|^## Version ([0-9]{4}/[0-9]{2}/[0-9]{2}).*|\1|p' "${sample_config}")"
     if [ "${active_version}" != "${sample_version}" ]; then
