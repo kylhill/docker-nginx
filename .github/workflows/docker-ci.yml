@@ -1,0 +1,87 @@
+name: Validate Docker image
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: ShellCheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          find root scripts -type f -exec grep -Il '^#!' {} + \
+            | sort \
+            | xargs shellcheck
+
+      - name: Hadolint
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
+        with:
+          dockerfile: Dockerfile
+
+  smoke:
+    name: Smoke (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            expected_arch: amd64
+          - arch: arm64
+            platform: linux/arm64
+            expected_arch: arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Set up QEMU
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Build and load image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          load: true
+          pull: true
+          tags: docker-nginx:ci-${{ matrix.arch }}
+          cache-from: type=gha,scope=ci-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=ci-${{ matrix.arch }}
+
+      - name: Confirm loaded architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(docker image inspect \
+            --format '{{.Architecture}}' \
+            docker-nginx:ci-${{ matrix.arch }})"
+          test "${actual}" = "${{ matrix.expected_arch }}"
+
+      - name: Run core smoke test
+        env:
+          IMAGE: docker-nginx:ci-${{ matrix.arch }}
+          PLATFORM: ${{ matrix.platform }}
+          SKIP_BUILD: "1"
+        run: scripts/verify-image.sh
+
+      - name: Run amd64 integration tests
+        if: matrix.arch == 'amd64'
+        env:
+          IMAGE: docker-nginx:ci-amd64
+        run: scripts/verify-integration.sh

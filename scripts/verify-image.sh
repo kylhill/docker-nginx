@@ -5,6 +5,8 @@ IMAGE="${IMAGE:-docker-nginx:verify}"
 CONTAINER="${CONTAINER:-docker-nginx-verify-$$}"
 DOCKERFILE="${DOCKERFILE:-Dockerfile}"
 BUILD_CONTEXT="${BUILD_CONTEXT:-.}"
+PLATFORM="${PLATFORM:-}"
+SKIP_BUILD="${SKIP_BUILD:-0}"
 RUN_SECONDS="${RUN_SECONDS:-8}"
 LOG_ERROR_REGEX="${LOG_ERROR_REGEX:-\\b(emerg|alert|crit|fatal|error|failed)\\b}"
 KEEP_CONTAINER="${KEEP_CONTAINER:-0}"
@@ -21,15 +23,35 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "Building ${IMAGE} from ${DOCKERFILE}..."
-docker build -t "${IMAGE}" -f "${DOCKERFILE}" "${BUILD_CONTEXT}"
+if [ "${SKIP_BUILD}" != "1" ]; then
+    echo "Building ${IMAGE} from ${DOCKERFILE}..."
+    if [ -n "${PLATFORM}" ]; then
+        docker buildx build \
+            --load \
+            --platform "${PLATFORM}" \
+            --pull \
+            -t "${IMAGE}" \
+            -f "${DOCKERFILE}" \
+            "${BUILD_CONTEXT}"
+    else
+        docker build -t "${IMAGE}" -f "${DOCKERFILE}" "${BUILD_CONTEXT}"
+    fi
+else
+    echo "Using prebuilt image ${IMAGE}."
+fi
 
 docker volume create "${CONFIG_VOLUME}" >/dev/null
 
 echo "Starting ${CONTAINER} with temporary /config..."
+RUN_ARGS=()
+if [ -n "${PLATFORM}" ]; then
+    RUN_ARGS+=(--platform "${PLATFORM}")
+fi
+
 docker run -d \
     --name "${CONTAINER}" \
     -v "${CONFIG_VOLUME}:/config" \
+    "${RUN_ARGS[@]}" \
     "${IMAGE}" >/dev/null
 
 for ((i = 0; i < RUN_SECONDS; i++)); do
@@ -42,7 +64,7 @@ for ((i = 0; i < RUN_SECONDS; i++)); do
 done
 
 echo "Validating nginx config inside running container..."
-docker exec "${CONTAINER}" nginx -t
+docker exec "${CONTAINER}" nginx -t -e stderr
 
 echo "Checking CrowdSec Lua modules can be loaded during nginx startup..."
 docker exec "${CONTAINER}" sh -lc 'cat > /tmp/crowdsec-lua-load-test.conf <<'"'"'EOF'"'"'

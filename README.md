@@ -50,6 +50,17 @@ Adjust or remove those shared includes in `/config/nginx/snippets/` to fit your 
 - `/config/keys/`: TLS certificates and private keys
 - `/config/geoip/`: GeoIP database download location
 
+CrowdSec and GeoIPUpdate generate credential-bearing runtime configuration
+under `/run` rather than the image filesystem. To run with a read-only root,
+keep `/config` writable and provide tmpfs mounts for `/run:exec` and `/tmp`:
+
+```yaml
+read_only: true
+tmpfs:
+  - /run:exec
+  - /tmp
+```
+
 ## Dependency Updates
 
 The image follows the newest upstream LinuxServer Alpine tag and resolves current Alpine packages and Lua rocks during each fresh CI build. GeoIPUpdate and the CrowdSec nginx bouncer are fixed to reviewed versions and checksums in the Dockerfile. Published images include SBOM and provenance attestations, and source/run-specific tags provide rollback targets for scheduled rebuilds.
@@ -57,5 +68,6 @@ The image follows the newest upstream LinuxServer Alpine tag and resolves curren
 ## Notes
 
 - `geoipupdate` runs during container initialization when `GEOIPUPDATE_ACCOUNT_ID` and `GEOIPUPDATE_LICENSE_KEY` are set.
+- `GEOIPUPDATE_ACCOUNT_ID`, `GEOIPUPDATE_LICENSE_KEY`, and `CROWDSEC_NGINX_API_KEY` support Docker `_FILE` secret variables. `GEOIPUPDATE_EDITION_IDS` is a non-secret database selection setting.
 - The image exposes `80/tcp`, `443/tcp`, and `443/udp`. Publish both TCP and UDP port 443 to use HTTP/3/QUIC.
 - Compression defaults include gzip, Brotli, and Zstandard modules.

@@ -61,7 +61,9 @@ RUN set -eux; \
     # download and verify the tar.gz for the architecture
     curl -fsSL -o /tmp/geoipupdate.tar.gz \
       "https://github.com/maxmind/geoipupdate/releases/download/v${GEOIPUPDATE_VERSION}/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${RELEASE_ARCH}.tar.gz"; \
-    printf '%s  %s\n' "$GEOIPUPDATE_SHA256" /tmp/geoipupdate.tar.gz | sha256sum -c -; \
+    printf '%s  %s\n' "$GEOIPUPDATE_SHA256" /tmp/geoipupdate.tar.gz \
+        > /tmp/geoipupdate.sha256; \
+    sha256sum -c /tmp/geoipupdate.sha256; \
     \
     # extract binary and move to /usr/local/bin
     tar -xzf /tmp/geoipupdate.tar.gz -C /tmp; \
@@ -77,17 +79,27 @@ ARG CROWDSEC_BOUNCER_VERSION=1.1.6
 ARG CROWDSEC_BOUNCER_SHA256=323c6bd182cda2221d5b2d3d21b7e5e0b66ec77dd306a37299916617c3d50eea
 LABEL io.github.kylhill.docker-nginx.geoipupdate.version="${GEOIPUPDATE_VERSION}" \
       io.github.kylhill.docker-nginx.crowdsec-bouncer.version="${CROWDSEC_BOUNCER_VERSION}"
+COPY patches/crowdsec-lua-1.0.14.patch /tmp/crowdsec-lua.patch
 RUN set -eux; \
     apk add --no-cache --virtual .crowdsec-build-deps \
       curl \
+      patch \
       tar \
       ca-certificates; \
     \
     # download, verify, and extract the bouncer tarball
     curl -fsSL -o /tmp/bouncer.tgz \
       "https://github.com/crowdsecurity/cs-nginx-bouncer/releases/download/v${CROWDSEC_BOUNCER_VERSION}/crowdsec-nginx-bouncer.tgz"; \
-    printf '%s  %s\n' "$CROWDSEC_BOUNCER_SHA256" /tmp/bouncer.tgz | sha256sum -c -; \
+    printf '%s  %s\n' "$CROWDSEC_BOUNCER_SHA256" /tmp/bouncer.tgz \
+        > /tmp/crowdsec-bouncer.sha256; \
+    sha256sum -c /tmp/crowdsec-bouncer.sha256; \
     tar -xzf /tmp/bouncer.tgz -C /tmp; \
+    \
+    # Apply the two intentional local behavior fixes without allowing fuzzy
+    # matches, so a future upstream source change fails the build.
+    patch --batch --forward --fuzz=0 -p1 \
+        -d /tmp/crowdsec-nginx-bouncer-*/lua-mod/lib \
+        < /tmp/crowdsec-lua.patch; \
     \
     # install Lua library files
     mkdir -p /usr/local/lua/crowdsec/plugins/crowdsec; \
@@ -95,19 +107,6 @@ RUN set -eux; \
     cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/lib/plugins/crowdsec/*.lua /usr/local/lua/crowdsec/plugins/crowdsec/; \
     printf 'return "%s"\n' "$CROWDSEC_BOUNCER_VERSION" \
         > /usr/local/lua/crowdsec/bouncer_version.lua; \
-    \
-    # patch captcha plugin to return gracefully (no error) when no provider is configured,
-    # so nginx starts cleanly without the "no recaptcha site key" error log
-    grep -q 'function M.New(siteKey, secretKey, TemplateFilePath, captcha_provider, ret_code)' \
-        /usr/local/lua/crowdsec/plugins/crowdsec/captcha.lua; \
-    sed -i 's|function M.New(siteKey, secretKey, TemplateFilePath, captcha_provider, ret_code)|function M.New(siteKey, secretKey, TemplateFilePath, captcha_provider, ret_code)\n    if captcha_provider == nil or captcha_provider == "" then\n        return\n    end|' \
-        /usr/local/lua/crowdsec/plugins/crowdsec/captcha.lua; \
-    \
-    # downgrade "APPSEC is enabled" from ERR to INFO - it's an informational startup message
-    grep -q 'ngx.log(ngx.ERR, "APPSEC is enabled' \
-        /usr/local/lua/crowdsec/crowdsec.lua; \
-    sed -i 's|ngx.log(ngx.ERR, "APPSEC is enabled|ngx.log(ngx.INFO, "APPSEC is enabled|' \
-        /usr/local/lua/crowdsec/crowdsec.lua; \
     \
     # install ban HTML template only (no captcha)
     mkdir -p /var/lib/crowdsec/lua/templates; \

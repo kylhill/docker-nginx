@@ -1,0 +1,24 @@
+--- a/plugins/crowdsec/captcha.lua
++++ b/plugins/crowdsec/captcha.lua
+@@ -26,6 +26,10 @@
+ M.ret_code = ngx.HTTP_OK
+ 
+ function M.New(siteKey, secretKey, TemplateFilePath, captcha_provider, ret_code)
++    if captcha_provider == nil or captcha_provider == "" then
++        return
++    end
++
+ 
+     if siteKey == nil or siteKey == "" then
+       return "no recaptcha site key provided, can't use recaptcha"
+--- a/crowdsec.lua
++++ b/crowdsec.lua
+@@ -240,7 +240,7 @@
+     if u.port ~= nil then
+       runtime.conf["APPSEC_HOST"] = runtime.conf["APPSEC_HOST"] .. ":" .. u.port
+     end
+-    ngx.log(ngx.ERR, "APPSEC is enabled on '" .. runtime.conf["APPSEC_HOST"] .. "'")
++    ngx.log(ngx.INFO, "APPSEC is enabled on '" .. runtime.conf["APPSEC_HOST"] .. "'")
+   end
+ 
+ 

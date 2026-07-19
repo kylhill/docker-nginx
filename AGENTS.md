@@ -17,7 +17,7 @@ docker buildx build --platform linux/amd64,linux/arm64 -t docker-nginx .
 scripts/verify-image.sh
 ```
 
-There are no unit tests. `scripts/verify-image.sh` is the smoke test to run after Dockerfile, nginx config, or container startup changes. It builds the image, starts it with a temporary `/config` Docker volume, runs `nginx -t`, checks the CrowdSec Lua modules can be loaded by nginx, and fails if startup logs contain error-level patterns.
+There are no unit tests. `scripts/verify-image.sh` is the core smoke test to run after Dockerfile, nginx config, or container startup changes. `scripts/verify-integration.sh` adds enabled-CrowdSec, secret, read-only, persistence, TLS/HTTP2/HTTP3, GeoIP failure, and graceful-shutdown coverage. The smoke test builds the image, starts it with a temporary `/config` Docker volume, runs nginx validation, checks the CrowdSec Lua modules during nginx startup, and fails if startup logs contain error-level patterns.
 
 ## Architecture
 
@@ -82,7 +82,9 @@ Files placed in `/config/nginx/site-confs/` **must be named `*.subdomain.conf`**
 | `GEOIPUPDATE_LICENSE_KEY` | MaxMind license key |
 | `GEOIPUPDATE_EDITION_IDS` | Database editions (default: `GeoLite2-Country`) |
 
-All three support the `_FILE` suffix pattern for Docker secrets (e.g., `GEOIPUPDATE_LICENSE_KEY_FILE=/run/secrets/maxmind_key`).
+`GEOIPUPDATE_ACCOUNT_ID` and `GEOIPUPDATE_LICENSE_KEY` support the `_FILE` suffix pattern for Docker secrets (e.g., `GEOIPUPDATE_LICENSE_KEY_FILE=/run/secrets/maxmind_key`). `GEOIPUPDATE_EDITION_IDS` is a non-secret database selection setting. `CROWDSEC_NGINX_API_KEY` also supports `CROWDSEC_NGINX_API_KEY_FILE`.
+
+Generated GeoIPUpdate and CrowdSec credential files live under `/run`; read-only deployments require writable `/config` plus tmpfs mounts for `/run:exec` and `/tmp`.
 
 ### Dockerfile
 
@@ -90,4 +92,4 @@ All three support the `_FILE` suffix pattern for Docker secrets (e.g., `GEOIPUPD
 
 ### CI / Publishing
 
-Pushes to `main` always trigger a fresh smoke-tested multi-platform publish. Daily scheduled runs compare the current upstream LinuxServer manifest digest with the digest recorded on `latest` and build only when it changed. Alpine packages and Lua rocks float at build time; GeoIPUpdate and the CrowdSec bouncer are fixed and checksum-verified. GitHub Actions remain pinned to immutable commit SHAs. Images are tagged as both `latest` and a source/run-specific rollback tag, with SBOM and provenance attestations attached.
+Pull requests run ShellCheck, Hadolint, amd64 integration tests, and core smoke tests on both amd64 and arm64 under QEMU. Pushes to `main` and scheduled publishing reuse those checks before publishing. Daily scheduled runs compare the current upstream LinuxServer manifest digest with the digest recorded on `latest` and build only when it changed. Alpine packages and Lua rocks float at build time; GeoIPUpdate and the CrowdSec bouncer are fixed and checksum-verified. GitHub Actions remain pinned to immutable commit SHAs. Images are tagged as both `latest` and a source/run-specific rollback tag, with SBOM and provenance attestations attached.

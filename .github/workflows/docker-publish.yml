@@ -12,16 +12,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-publish:
+  gate:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      packages: read
+    outputs:
+      should_build: ${{ steps.gate.outputs.should_build }}
+      base_image: ${{ steps.base.outputs.base_image }}
+      base_digest: ${{ steps.base.outputs.base_digest }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-
       - name: Set up Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
@@ -99,8 +100,29 @@ jobs:
             echo "should_build=false" >> "$GITHUB_OUTPUT"
           fi
 
+  verify:
+    needs: gate
+    if: needs.gate.outputs.should_build == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/docker-ci.yml
+
+  build-and-publish:
+    needs: [gate, verify]
+    if: >-
+      ${{ always() &&
+          needs.gate.outputs.should_build == 'true' &&
+          needs.verify.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
       - name: Prepare image metadata
-        if: steps.gate.outputs.should_build == 'true'
         id: image
         shell: bash
         run: |
@@ -108,16 +130,13 @@ jobs:
           echo "created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
           echo "version=${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
 
-      - name: Smoke-test image
-        if: steps.gate.outputs.should_build == 'true'
-        run: scripts/verify-image.sh
-
       - name: Set up QEMU
-        if: steps.gate.outputs.should_build == 'true'
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
 
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
       - name: Log in to GHCR
-        if: steps.gate.outputs.should_build == 'true'
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
@@ -125,7 +144,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push multi-platform image
-        if: steps.gate.outputs.should_build == 'true'
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
@@ -150,17 +168,16 @@ jobs:
             org.opencontainers.image.created=${{ steps.image.outputs.created }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.image.outputs.version }}
-            org.opencontainers.image.base.name=${{ steps.base.outputs.base_image }}
-            org.opencontainers.image.base.digest=${{ steps.base.outputs.base_digest }}
+            org.opencontainers.image.base.name=${{ needs.gate.outputs.base_image }}
+            org.opencontainers.image.base.digest=${{ needs.gate.outputs.base_digest }}
             io.github.kylhill.docker-nginx.geoipupdate.version=8.0.0
             io.github.kylhill.docker-nginx.crowdsec-bouncer.version=1.1.6
 
       - name: Inspect manifest
-        if: steps.gate.outputs.should_build == 'true'
         run: docker buildx imagetools inspect ghcr.io/${{ github.repository }}:latest
 
       - name: Prune GHCR package versions (keep 10)
-        if: steps.gate.outputs.should_build == 'true' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         uses: actions/delete-package-versions@25ad4af5be03aef10e0b3376b248688b7a44c40b # v5
         with:
           package-type: container

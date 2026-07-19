@@ -1,7 +1,8 @@
 #!/usr/bin/with-contenv bash
+# shellcheck shell=bash
 set -e
 
-# Protect the MaxMind license key written to /etc/GeoIP.conf.
+# Protect the MaxMind license key written to the runtime filesystem.
 umask 077
 
 read_secret() {
@@ -17,21 +18,23 @@ read_secret() {
 
 ACCOUNT_ID="$(read_secret GEOIPUPDATE_ACCOUNT_ID)"
 LICENSE_KEY="$(read_secret GEOIPUPDATE_LICENSE_KEY)"
+EDITION_IDS="${GEOIPUPDATE_EDITION_IDS}"
+GEOIP_CONF="/run/GeoIP.conf"
 
 if [[ -n "$ACCOUNT_ID" && -n "$LICENSE_KEY" ]]; then
   echo "Configuring GeoIPUpdate..."
 
   mkdir -p /config/geoip
 
-  cat > /etc/GeoIP.conf <<EOF
+  cat > "${GEOIP_CONF}" <<EOF
 AccountID ${ACCOUNT_ID}
 LicenseKey ${LICENSE_KEY}
-EditionIDs ${GEOIPUPDATE_EDITION_IDS}
+EditionIDs ${EDITION_IDS}
 EOF
-  chmod 0600 /etc/GeoIP.conf
+  chmod 0600 "${GEOIP_CONF}"
 
   echo "Running geoipupdate..."
-  if ! /usr/local/bin/geoipupdate -f /etc/GeoIP.conf -d /config/geoip; then
+  if ! /usr/local/bin/geoipupdate -f "${GEOIP_CONF}" -d /config/geoip; then
     if ls /config/geoip/*.mmdb 1>/dev/null 2>&1; then
       echo "WARNING: geoipupdate failed, but an existing database was found. Continuing with cached database."
     else
@@ -39,6 +42,6 @@ EOF
     fi
   fi
 else
-  rm -f /etc/GeoIP.conf
+  rm -f "${GEOIP_CONF}"
   echo "GeoIPUpdate credentials not set, skipping update."
 fi

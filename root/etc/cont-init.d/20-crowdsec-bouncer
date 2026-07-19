@@ -17,7 +17,7 @@ read_secret() {
 }
 
 API_KEY="$(read_secret CROWDSEC_NGINX_API_KEY)"
-BOUNCER_CONF="/etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf"
+BOUNCER_CONF="/run/crowdsec/crowdsec-nginx-bouncer.conf"
 BOUNCER_CONF_TEMPLATE="/etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf.template"
 NGINX_CROWDSEC_INCLUDE="/config/nginx/http.d/crowdsec.conf"
 NGINX_CROWDSEC_INCLUDE_DEFAULT="/defaults/nginx/templates/crowdsec.conf"
@@ -27,7 +27,7 @@ rm -f "${NGINX_CROWDSEC_INCLUDE}" "${BOUNCER_CONF}"
 if [ -n "${API_KEY}" ] && [ -n "${CROWDSEC_LAPI_URL:-}" ]; then
     echo "Configuring CrowdSec nginx bouncer..."
 
-    mkdir -p /config/nginx/http.d
+    mkdir -p /config/nginx/http.d /run/crowdsec
 
     # The nginx include is static. The bouncer config needs runtime secrets.
     awk \
