@@ -2,7 +2,7 @@
 # shellcheck shell=bash
 set -e
 
-# Keep generated bouncer credentials private to root and the nginx user.
+# Keep generated bouncer credentials private to the container user.
 umask 077
 
 read_secret() {
@@ -17,16 +17,15 @@ read_secret() {
 }
 
 API_KEY="$(read_secret CROWDSEC_NGINX_API_KEY)"
-BOUNCER_CONF="/run/crowdsec/crowdsec-nginx-bouncer.conf"
-BOUNCER_CONF_TEMPLATE="/etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf.template"
-NGINX_CROWDSEC_INCLUDE="/config/nginx/http.d/crowdsec.conf"
-NGINX_CROWDSEC_INCLUDE_DEFAULT="/defaults/nginx/templates/crowdsec.conf"
+BOUNCER_CONF=/run/crowdsec/crowdsec-nginx-bouncer.conf
+BOUNCER_CONF_TEMPLATE=/etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf.template
+NGINX_CROWDSEC_INCLUDE=/config/nginx/http.d/crowdsec.conf
+NGINX_CROWDSEC_INCLUDE_DEFAULT=/defaults/nginx/templates/crowdsec.conf
 
 rm -f "${NGINX_CROWDSEC_INCLUDE}" "${BOUNCER_CONF}"
 
 if [ -n "${API_KEY}" ] && [ -n "${CROWDSEC_LAPI_URL:-}" ]; then
     echo "Configuring CrowdSec nginx bouncer..."
-
     mkdir -p /config/nginx/http.d /run/crowdsec
 
     # The nginx include is static. The bouncer config needs runtime secrets.
@@ -58,9 +57,10 @@ if [ -n "${API_KEY}" ] && [ -n "${CROWDSEC_LAPI_URL:-}" ]; then
         "${BOUNCER_CONF_TEMPLATE}" \
         > "${BOUNCER_CONF}"
 
-    chown abc:abc "${BOUNCER_CONF}"
+    if [[ -z ${LSIO_NON_ROOT_USER} ]]; then
+        chown abc:abc "${BOUNCER_CONF}"
+    fi
     chmod 0600 "${BOUNCER_CONF}"
-
     install -m 0644 "${NGINX_CROWDSEC_INCLUDE_DEFAULT}" "${NGINX_CROWDSEC_INCLUDE}"
 else
     echo "CrowdSec credentials not set, nginx bouncer disabled."

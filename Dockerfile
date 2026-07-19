@@ -19,6 +19,9 @@ RUN set -eux; \
     nginx-mod-http-zstd; \
   # Remove default config
   rm -f /etc/nginx/http.d/default.conf; \
+  # Alpine stores its module symlink below this directory. Arbitrary-UID
+  # LinuxServer non-root mode needs traverse access to load nginx modules.
+  chmod 0755 /var/lib/nginx; \
   # Remove default /var/www content
   find /var/www -mindepth 1 ! -path /var/www/favicon.ico -exec rm -rf {} +;
 
@@ -112,7 +115,7 @@ RUN set -eux; \
     mkdir -p /var/lib/crowdsec/lua/templates; \
     cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/templates/ban.html /var/lib/crowdsec/lua/templates/; \
     \
-    # install bouncer config template adjusted by cont-init.d/20-crowdsec-bouncer
+    # install bouncer config template adjusted by the init-crowdsec s6 service
     # at startup
     mkdir -p /etc/crowdsec/bouncers; \
     cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/config_example.conf \

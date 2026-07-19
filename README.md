@@ -15,6 +15,9 @@ when an active config's date differs from its sample, startup prints a
 reconciliation warning and leaves the active file unchanged. Compare the two
 files in the host-mounted `/config` directory and apply changes manually.
 The `.conf.sample` files are image-managed and are replaced on every startup.
+The active resolver snippet is generated once from the nameservers in the
+container's `/etc/resolv.conf`; an existing `/config/nginx/snippets/resolver.conf`
+is never replaced.
 
 ## Reverse Proxy Example
 
@@ -82,13 +85,22 @@ tmpfs:
 An example Compose deployment is provided in `compose.example.yml`. Its port
 bindings publish HTTPS on TCP 443 and HTTP/3 on UDP 443.
 
+The image inherits LinuxServer's `PUID`, `PGID`, `TZ`, and `UMASK` environment
+variables. `PUID` and `PGID` control the `abc` account when the container starts
+as root. For LinuxServer's non-root mode, set Compose `user: "1000:1000"`
+instead; the mounted `/config` tree must already be writable by that UID/GID.
+LinuxServer does not support combining its read-only and non-root modes. The
+container runtime must also permit the selected UID to bind ports 80 and 443
+(for example through an unprivileged-port sysctl or the appropriate capability).
+
 ## Dependency Updates
 
 The image follows the newest upstream LinuxServer Alpine tag and resolves current Alpine packages and Lua rocks during each fresh CI build. GeoIPUpdate and the CrowdSec nginx bouncer are fixed to reviewed versions and checksums in the Dockerfile. Published images include SBOM and provenance attestations, and source/run-specific tags provide rollback targets for scheduled rebuilds.
 
 ## Notes
 
-- `geoipupdate` runs during container initialization when `GEOIPUPDATE_ACCOUNT_ID` and `GEOIPUPDATE_LICENSE_KEY` are set.
-- `GEOIPUPDATE_ACCOUNT_ID`, `GEOIPUPDATE_LICENSE_KEY`, and `CROWDSEC_NGINX_API_KEY` support Docker `_FILE` secret variables. `GEOIPUPDATE_EDITION_IDS` is a non-secret database selection setting.
+- `geoipupdate` runs during the s6 initialization chain when `GEOIPUPDATE_ACCOUNT_ID` and `GEOIPUPDATE_LICENSE_KEY` are set.
+- `GEOIPUPDATE_ACCOUNT_ID`, `GEOIPUPDATE_LICENSE_KEY`, and `CROWDSEC_NGINX_API_KEY` support both this image's `VARIABLE_FILE=/run/secrets/file` form and LinuxServer's standard `FILE__VARIABLE=/run/secrets/file` form. `GEOIPUPDATE_EDITION_IDS` is a non-secret database selection setting.
+- Enabled site files must end in `.subdomain.conf`; startup warns about other files in `/config/nginx/site-confs/` because nginx ignores them.
 - The image exposes `80/tcp`, `443/tcp`, and `443/udp`. Publish both TCP and UDP port 443 to use HTTP/3/QUIC.
 - Compression defaults include gzip, Brotli, and Zstandard modules.

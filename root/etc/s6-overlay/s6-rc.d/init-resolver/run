@@ -1,0 +1,30 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+set -e
+
+resolver_conf=/config/nginx/snippets/resolver.conf
+
+if [ ! -e "${resolver_conf}" ]; then
+    resolver_servers="$(awk '
+        $1 == "nameserver" {
+            server = $2
+            if (index(server, ":") != 0) {
+                server = "[" server "]"
+            }
+            printf "%s%s", separator, server
+            separator = " "
+        }
+    ' /etc/resolv.conf)"
+    if [ -z "${resolver_servers}" ]; then
+        resolver_servers=127.0.0.11
+        echo "WARNING: /etc/resolv.conf contained no nameservers; using ${resolver_servers}."
+    fi
+
+    echo "Generating nginx resolver configuration from /etc/resolv.conf..."
+    mkdir -p "$(dirname "${resolver_conf}")"
+    {
+        echo "## Version 2026/07/20 - Generated from the container's /etc/resolv.conf."
+        echo "resolver ${resolver_servers} ipv6=off valid=300s;"
+        echo "resolver_timeout 2s;"
+    } > "${resolver_conf}"
+fi

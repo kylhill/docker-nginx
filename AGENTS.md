@@ -17,7 +17,7 @@ docker buildx build --platform linux/amd64,linux/arm64 -t docker-nginx .
 scripts/verify-image.sh
 ```
 
-There are no unit tests. `scripts/verify-image.sh` is the core smoke test to run after Dockerfile, nginx config, or container startup changes. `scripts/verify-integration.sh` adds enabled-CrowdSec, secret, read-only, persistence, TLS/HTTP2/HTTP3, GeoIP failure, and graceful-shutdown coverage. The smoke test builds the image, starts it with a temporary `/config` Docker volume, runs nginx validation, checks the CrowdSec Lua modules during nginx startup, and fails if startup logs contain error-level patterns.
+There are no unit tests. `scripts/verify-image.sh` is the core smoke test to run after Dockerfile, nginx config, or container startup changes. `scripts/verify-integration.sh` adds enabled-CrowdSec, secret-file conventions, resolver generation, config naming and permissions, read-only and non-root modes, persistence, TLS/HTTP2/HTTP3, GeoIP failure, and graceful-shutdown coverage. The smoke test builds the image, starts it with a temporary `/config` Docker volume, runs nginx validation, checks the CrowdSec Lua modules during nginx startup, and fails if startup logs contain error-level patterns.
 
 ## Architecture
 
@@ -35,19 +35,23 @@ Everything under `root/` is copied directly onto the container filesystem at `/`
 Services run in dependency order:
 
 ```
-init-folders → init-samples → init-nginx → init-permissions → init-version-checks → init-nginx-end
-                                                                       ↓
-                                                                svc-nginx (long-running)
+init-folders → init-samples → init-nginx → init-resolver → init-geoipupdate
+                                                               ↓
+init-nginx-end ← init-nginx-validate ← init-version-checks ← init-permissions ← init-crowdsec
+       ↓
+svc-nginx (long-running)
 ```
 
 - `init-folders`: creates `/config/geoip`, `/config/keys`, `/config/nginx/site-confs`, and generates the persistent `/config/keys/quic_host.key` when absent
 - `init-samples`: removes the previous image-managed `*.conf.sample` set and refreshes samples beside active configs for host-side comparison
-- `init-nginx`: copies missing active files from `/defaults/nginx/` without replacing user files and validates config with `nginx -t`
-- `init-permissions`: sets ownership of `/config/**` to `abc:abc`
-- `init-version-checks`: compares active and adjacent sample version headers and prints a reconciliation warning for stale active files
+- `init-nginx`: copies missing active files from `/defaults/nginx/` without replacing user files
+- `init-resolver`: generates a missing resolver snippet from `/etc/resolv.conf`
+- `init-geoipupdate`: downloads GeoIP databases when credentials are configured
+- `init-crowdsec`: generates the enabled CrowdSec runtime and nginx configuration
+- `init-permissions`: makes nginx configuration group-writable and sets root-mode ownership of `/config/**` to `abc:abc`
+- `init-version-checks`: warns about active/sample version mismatches and ignored site-conf filenames
+- `init-nginx-validate`: validates the completed configuration with `nginx -t`
 - `svc-nginx`: kills any zombie nginx processes then execs `nginx -e stderr`
-
-Container initialization (`root/etc/cont-init.d/10-geoipupdate`) runs `geoipupdate` to download GeoIP databases if credentials are provided.
 
 ### nginx config loading
 
@@ -86,7 +90,7 @@ Use `proxy.conf` for upstream proxy locations — it includes `proxy-common.conf
 
 ### Site conf naming requirement
 
-Files placed in `/config/nginx/site-confs/` **must be named `*.subdomain.conf`** to be picked up by the nginx include glob. Files named otherwise are silently ignored.
+Files placed in `/config/nginx/site-confs/` **must be named `*.subdomain.conf`** to be picked up by the nginx include glob. Startup warns when other non-sample files are silently ignored by nginx.
 
 ### GeoIP environment variables
 
@@ -96,9 +100,14 @@ Files placed in `/config/nginx/site-confs/` **must be named `*.subdomain.conf`**
 | `GEOIPUPDATE_LICENSE_KEY` | MaxMind license key |
 | `GEOIPUPDATE_EDITION_IDS` | Database editions (default: `GeoLite2-Country`) |
 
-`GEOIPUPDATE_ACCOUNT_ID` and `GEOIPUPDATE_LICENSE_KEY` support the `_FILE` suffix pattern for Docker secrets (e.g., `GEOIPUPDATE_LICENSE_KEY_FILE=/run/secrets/maxmind_key`). `GEOIPUPDATE_EDITION_IDS` is a non-secret database selection setting. `CROWDSEC_NGINX_API_KEY` also supports `CROWDSEC_NGINX_API_KEY_FILE`.
+`GEOIPUPDATE_ACCOUNT_ID`, `GEOIPUPDATE_LICENSE_KEY`, and `CROWDSEC_NGINX_API_KEY` support both the `_FILE` suffix pattern (e.g., `GEOIPUPDATE_LICENSE_KEY_FILE=/run/secrets/maxmind_key`) and LinuxServer's `FILE__VARIABLE` convention (e.g., `FILE__GEOIPUPDATE_LICENSE_KEY=/run/secrets/maxmind_key`). `GEOIPUPDATE_EDITION_IDS` is a non-secret database selection setting.
 
 Generated GeoIPUpdate and CrowdSec credential files live under `/run`; read-only deployments require writable `/config` plus tmpfs mounts for `/run:exec` and `/tmp`.
+
+The LinuxServer base image supplies `PUID`, `PGID`, `TZ`, and `UMASK`. Explicit
+non-root operation uses the container runtime's `user` setting and requires a
+pre-writable `/config`; do not assume `PUID`/`PGID` change ownership in that
+mode. LinuxServer does not support combining read-only and non-root modes.
 
 ### Dockerfile
 

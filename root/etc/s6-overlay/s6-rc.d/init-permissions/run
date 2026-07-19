@@ -1,6 +1,8 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
 
+chmod -R g+w /config/nginx
+
 if [[ -z ${LSIO_READ_ONLY_FS} ]] && [[ -z ${LSIO_NON_ROOT_USER} ]]; then
     # permissions
     lsiown -R abc:abc \

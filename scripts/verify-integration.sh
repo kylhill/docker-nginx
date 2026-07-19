@@ -77,7 +77,8 @@ bootstrap_config() {
         -v "${volume}:/config" \
         --entrypoint sh \
         "${IMAGE}" \
-        -c 'cp -r /defaults/nginx /config/'
+        -c 'cp -r /defaults/nginx /config/
+            rm -f /config/nginx/snippets/resolver.conf'
 }
 
 install_fixtures() {
@@ -89,6 +90,7 @@ install_fixtures() {
         "${HELPER_IMAGE}" \
         -c 'mkdir -p /config/nginx/site-confs
             cp /fixtures/integration.subdomain.conf /config/nginx/site-confs/
+            : > /config/nginx/site-confs/ignored.conf
             cp /fixtures/geoip2.conf /config/nginx/http.d/
             : > /config/nginx/obsolete.conf.sample
             sed -i "s|error_log stderr warn;|error_log stderr debug;|" /config/nginx/nginx.conf'
@@ -250,12 +252,12 @@ docker run -d \
     --tmpfs /run:exec \
     --tmpfs /tmp \
     -e CROWDSEC_NGINX_API_KEY=decoy-api-key \
-    -e CROWDSEC_NGINX_API_KEY_FILE=/run/secrets/crowdsec_api_key \
+    -e FILE__CROWDSEC_NGINX_API_KEY=/run/secrets/crowdsec_api_key \
     -e CROWDSEC_LAPI_URL="http://${LAPI}:8080" \
     -e GEOIPUPDATE_ACCOUNT_ID=decoy-account \
     -e GEOIPUPDATE_ACCOUNT_ID_FILE=/run/secrets/maxmind_account \
     -e GEOIPUPDATE_LICENSE_KEY=decoy-license \
-    -e GEOIPUPDATE_LICENSE_KEY_FILE=/run/secrets/maxmind_license \
+    -e FILE__GEOIPUPDATE_LICENSE_KEY=/run/secrets/maxmind_license \
     -e GEOIPUPDATE_EDITION_IDS=GeoLite2-Country \
     -v "${CONFIG_VOLUME}:/config" \
     -v "${TEST_ROOT}/secrets:/run/secrets:ro" \
@@ -264,6 +266,7 @@ docker run -d \
 
 wait_running "${TARGET}"
 wait_for_log "${LAPI}" 'user_agent="crowdsec-nginx-bouncer/v1.1.6"'
+wait_for_log "${TARGET}" 'site configs are ignored because their names do not end in .subdomain.conf'
 
 docker exec "${TARGET}" sh -c '
     test -f /config/nginx/nginx.conf.sample
@@ -271,6 +274,10 @@ docker exec "${TARGET}" sh -c '
     test ! -e /config/nginx/obsolete.conf.sample
     cmp -s /defaults/nginx/nginx.conf /config/nginx/nginx.conf.sample
     cmp -s /defaults/nginx/snippets/resolver.conf /config/nginx/snippets/resolver.conf.sample
+    grep -q "^resolver " /config/nginx/snippets/resolver.conf
+    grep -Fq "Generated from the container" /config/nginx/snippets/resolver.conf
+    test "$((0$(stat -c %a /config/nginx/nginx.conf) & 0020))" -ne 0
+    test "$((0$(stat -c %a /config/nginx/nginx.conf.sample) & 0020))" -ne 0
 '
 
 QUIC_HOST_KEY_SHA256="$(docker exec "${TARGET}" sha256sum \
@@ -280,7 +287,7 @@ docker exec "${TARGET}" sh -c '
     test "$(wc -c < /config/keys/quic_host.key)" = 32
 '
 
-echo "Checking runtime secret paths and _FILE precedence..."
+echo "Checking runtime secret paths and LinuxServer secret-file conventions..."
 docker exec "${TARGET}" sh -c '
     test "$(stat -c %a /run/GeoIP.conf)" = 600
     test "$(stat -c %a /run/crowdsec/crowdsec-nginx-bouncer.conf)" = 600
@@ -339,7 +346,7 @@ echo "Checking graceful shutdown and persisted /config..."
 docker exec "${TARGET}" sh -c \
     'printf "\\n# integration-persistence-marker\\n" >> /config/nginx/snippets/resolver.conf'
 docker exec "${TARGET}" sed -i \
-    '1s|2026/07/19|2020/01/01|' /config/nginx/snippets/resolver.conf
+    '1s|2026/07/20|2020/01/01|' /config/nginx/snippets/resolver.conf
 
 docker exec "${TRUSTED_CLIENT}" curl -sS "http://${TARGET}:8080/slow" \
     >"${TEST_ROOT}/slow-response" &
@@ -368,7 +375,7 @@ docker exec "${PERSISTED_TARGET}" grep -Fq \
     '# integration-persistence-marker' /config/nginx/snippets/resolver.conf ||
     fail "persisted configuration was overwritten"
 docker exec "${PERSISTED_TARGET}" grep -Fq \
-    '## Version 2026/07/19' /config/nginx/snippets/resolver.conf.sample ||
+    '## Version 2026/07/20' /config/nginx/snippets/resolver.conf.sample ||
     fail "shipped sample was not refreshed"
 [ "$(docker exec "${PERSISTED_TARGET}" sha256sum \
     /config/keys/quic_host.key | awk '{print $1}')" = "${QUIC_HOST_KEY_SHA256}" ] ||
@@ -409,5 +416,28 @@ test_geo_failure missing \
     'geoipupdate failed and no existing database was found'
 test_geo_failure cached \
     'geoipupdate failed, but an existing database was found'
+
+echo "Checking LinuxServer non-root operation..."
+NONROOT_VOLUME="${PREFIX}-nonroot"
+NONROOT_TARGET="${PREFIX}-nonroot"
+new_volume "${NONROOT_VOLUME}"
+bootstrap_config "${NONROOT_VOLUME}"
+docker run --rm -v "${NONROOT_VOLUME}:/config" "${HELPER_IMAGE}" \
+    sh -c 'chown -R 1000:1000 /config'
+
+CONTAINERS+=("${NONROOT_TARGET}")
+docker run -d \
+    --name "${NONROOT_TARGET}" \
+    --user 1000:1000 \
+    --tmpfs /run:exec,uid=1000,gid=1000 \
+    --tmpfs /tmp:uid=1000,gid=1000 \
+    -e TZ=Etc/UTC \
+    -e UMASK=002 \
+    -v "${NONROOT_VOLUME}:/config" \
+    "${IMAGE}" >/dev/null
+wait_running "${NONROOT_TARGET}"
+wait_for_log "${NONROOT_TARGET}" 'nginx: configuration file /etc/nginx/nginx.conf test is successful'
+docker exec "${NONROOT_TARGET}" nginx -t -e stderr
+docker stop -t 10 "${NONROOT_TARGET}" >/dev/null
 
 echo "Integration verification passed."

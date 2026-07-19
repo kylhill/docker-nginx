@@ -2,6 +2,11 @@ services:
   nginx:
     image: ghcr.io/kylhill/docker-nginx:latest
     restart: unless-stopped
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: America/Chicago
+      UMASK: "022"
     ports:
       - "80:80/tcp"
       - "443:443/tcp"
