@@ -28,6 +28,13 @@ server {
 
 `server-base.conf` already pulls in the shared HTTPS listen, SSL, GeoIP, and crawler policy snippets. Certificates are expected at `/config/keys/cert.crt` and `/config/keys/cert.key` by default.
 
+The catch-all server owns the `reuseport` socket option once for each IPv4 and
+IPv6 HTTPS and QUIC socket. Do not repeat `reuseport` in individual virtual
+hosts.
+`quic_gso` is enabled by default and requires Linux `UDP_SEGMENT` support from
+the deployment host and network interface. Set it to `off` in
+`/config/nginx/nginx.conf` on an environment that does not provide that feature.
+
 If you also want plain HTTP to redirect to HTTPS, add a second server block such as `/config/nginx/http.d/redirect-http.conf`:
 
 ```nginx
@@ -50,6 +57,10 @@ Adjust or remove those shared includes in `/config/nginx/snippets/` to fit your 
 - `/config/keys/`: TLS certificates and private keys
 - `/config/geoip/`: GeoIP database download location
 
+The image creates `/config/keys/quic_host.key` on first startup and reuses it
+across reloads and container replacements. Back it up with the rest of
+`/config`; changing it invalidates previously issued QUIC validation tokens.
+
 CrowdSec and GeoIPUpdate generate credential-bearing runtime configuration
 under `/run` rather than the image filesystem. To run with a read-only root,
 keep `/config` writable and provide tmpfs mounts for `/run:exec` and `/tmp`:
@@ -60,6 +71,9 @@ tmpfs:
   - /run:exec
   - /tmp
 ```
+
+An example Compose deployment is provided in `compose.example.yml`. Its port
+bindings publish HTTPS on TCP 443 and HTTP/3 on UDP 443.
 
 ## Dependency Updates
 

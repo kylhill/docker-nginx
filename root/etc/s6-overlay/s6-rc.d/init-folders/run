@@ -5,4 +5,15 @@
 mkdir -p \
     /config/geoip \
     /config/keys \
-    /config/nginx/site-confs \
+    /config/nginx/site-confs
+
+# Keep QUIC stateless reset and address-validation tokens valid across nginx
+# reloads and container replacements that reuse /config.
+quic_host_key=/config/keys/quic_host.key
+if [ ! -e "${quic_host_key}" ]; then
+    echo "Generating persistent QUIC host key..."
+    quic_host_key_tmp="${quic_host_key}.tmp.$$"
+    (umask 077; head -c 32 /dev/urandom > "${quic_host_key_tmp}")
+    mv "${quic_host_key_tmp}" "${quic_host_key}"
+fi
+chmod 600 "${quic_host_key}"

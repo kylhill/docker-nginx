@@ -40,7 +40,7 @@ init-folders → init-nginx → init-permissions → init-version-checks → ini
                                                svc-nginx (long-running)
 ```
 
-- `init-folders`: creates `/config/geoip`, `/config/keys`, `/config/nginx/site-confs`
+- `init-folders`: creates `/config/geoip`, `/config/keys`, `/config/nginx/site-confs`, and generates the persistent `/config/keys/quic_host.key` when absent
 - `init-nginx`: copies missing files from `/defaults/nginx/` without replacing user files and validates config with `nginx -t`
 - `init-permissions`: sets ownership of `/config/**` to `abc:abc`
 - `init-version-checks`: compares dated config headers and prints a reconciliation warning for stale active files

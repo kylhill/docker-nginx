@@ -1,0 +1,13 @@
+services:
+  nginx:
+    image: ghcr.io/kylhill/docker-nginx:latest
+    restart: unless-stopped
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+      - "443:443/udp"
+    volumes:
+      - ./config:/config
+    tmpfs:
+      - /run:exec
+      - /tmp
