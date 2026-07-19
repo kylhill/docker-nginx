@@ -7,7 +7,14 @@ Inspired by https://github.com/nginxinc/docker-nginx/blob/master/stable/alpine/D
 
 This image packages nginx on top of the linuxserver Alpine base image and is intended to be used as a reverse proxy for self-hosted services.
 
-At container start, the default nginx config tree from `/defaults/nginx/` is copied into `/config/nginx/` only when files do not already exist there. Shipped configs carry dated `## Version` headers; when an active config’s date differs from the shipped version, startup prints a reconciliation warning and leaves the user file unchanged.
+At container start, the default nginx config tree from `/defaults/nginx/` is
+copied into `/config/nginx/` only when active files do not already exist. The
+current shipped version of every config is also refreshed alongside the active
+file as `<name>.conf.sample`. Shipped configs carry dated `## Version` headers;
+when an active config's date differs from its sample, startup prints a
+reconciliation warning and leaves the active file unchanged. Compare the two
+files in the host-mounted `/config` directory and apply changes manually.
+The `.conf.sample` files are image-managed and are replaced on every startup.
 
 ## Reverse Proxy Example
 

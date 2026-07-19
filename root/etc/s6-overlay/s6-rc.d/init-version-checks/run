@@ -4,23 +4,22 @@ set -e
 
 version_mismatches=""
 while IFS= read -r -d '' active_config; do
-    relative_path="${active_config#/config/nginx/}"
-    shipped_config="/defaults/nginx/${relative_path}"
-    if [ ! -f "${shipped_config}" ]; then
+    sample_config="${active_config}.sample"
+    if [ ! -f "${sample_config}" ]; then
         continue
     fi
 
     active_version="$(sed -nE 's|^## Version ([0-9]{4}/[0-9]{2}/[0-9]{2}).*|\1|p' "${active_config}")"
-    shipped_version="$(sed -nE 's|^## Version ([0-9]{4}/[0-9]{2}/[0-9]{2}).*|\1|p' "${shipped_config}")"
-    if [ "${active_version}" != "${shipped_version}" ]; then
-        version_mismatches+="│ $(printf '%10s' "${active_version:-missing}") │ $(printf '%10s' "${shipped_version:-missing}") │ $(printf '%-70s' "${active_config}") │\n"
+    sample_version="$(sed -nE 's|^## Version ([0-9]{4}/[0-9]{2}/[0-9]{2}).*|\1|p' "${sample_config}")"
+    if [ "${active_version}" != "${sample_version}" ]; then
+        version_mismatches+="│ $(printf '%10s' "${active_version:-missing}") │ $(printf '%10s' "${sample_version:-missing}") │ $(printf '%-70s' "${active_config}") │\n"
     fi
 done < <(find /config/nginx -type f -name '*.conf' -print0)
 
 if [ -n "${version_mismatches}" ]; then
-    echo "**** The following active configs have different version dates than the shipped defaults. ****"
-    echo "**** This may be due to user customization or an image update. ****"
-    echo "**** Compare these files with the shipped defaults and reconcile changes before replacing them. ****"
+    echo "**** The following active configs have different version dates than the shipped samples. ****"
+    echo "**** This may be due to user customization or an update to the samples. ****"
+    echo "**** Compare each file with the .sample in the same directory and reconcile changes manually. ****"
     echo "┌────────────┬────────────┬────────────────────────────────────────────────────────────────────────┐"
     echo "│  old date  │  new date  │ path                                                                   │"
     echo "├────────────┼────────────┼────────────────────────────────────────────────────────────────────────┤"

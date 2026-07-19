@@ -27,7 +27,7 @@ This is a Docker image that packages nginx on top of the [linuxserver.io Alpine 
 
 Everything under `root/` is copied directly onto the container filesystem at `/` by the `COPY root/ /` instruction. Two subtrees matter:
 
-- **`root/defaults/nginx/`** — Shipped default nginx config. Files are copied into `/config/nginx/` only when absent. Each shipped config has a `## Version YYYY/MM/DD` header; startup compares active files with the shipped defaults and warns when reconciliation is needed.
+- **`root/defaults/nginx/`** — Shipped default nginx config. Active files are copied into `/config/nginx/` only when absent, while current defaults are refreshed on every start as adjacent `.conf.sample` files. Each shipped config has a `## Version YYYY/MM/DD` header; startup compares active files with their samples and warns when reconciliation is needed.
 - **`root/etc/s6-overlay/s6-rc.d/`** — s6 service and init definitions.
 
 ### s6 init chain
@@ -35,15 +35,16 @@ Everything under `root/` is copied directly onto the container filesystem at `/`
 Services run in dependency order:
 
 ```
-init-folders → init-nginx → init-permissions → init-version-checks → init-nginx-end
-                                                      ↓
-                                               svc-nginx (long-running)
+init-folders → init-samples → init-nginx → init-permissions → init-version-checks → init-nginx-end
+                                                                       ↓
+                                                                svc-nginx (long-running)
 ```
 
 - `init-folders`: creates `/config/geoip`, `/config/keys`, `/config/nginx/site-confs`, and generates the persistent `/config/keys/quic_host.key` when absent
-- `init-nginx`: copies missing files from `/defaults/nginx/` without replacing user files and validates config with `nginx -t`
+- `init-samples`: removes the previous image-managed `*.conf.sample` set and refreshes samples beside active configs for host-side comparison
+- `init-nginx`: copies missing active files from `/defaults/nginx/` without replacing user files and validates config with `nginx -t`
 - `init-permissions`: sets ownership of `/config/**` to `abc:abc`
-- `init-version-checks`: compares dated config headers and prints a reconciliation warning for stale active files
+- `init-version-checks`: compares active and adjacent sample version headers and prints a reconciliation warning for stale active files
 - `svc-nginx`: kills any zombie nginx processes then execs `nginx -e stderr`
 
 Container initialization (`root/etc/cont-init.d/10-geoipupdate`) runs `geoipupdate` to download GeoIP databases if credentials are provided.

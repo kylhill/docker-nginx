@@ -90,6 +90,7 @@ install_fixtures() {
         -c 'mkdir -p /config/nginx/site-confs
             cp /fixtures/integration.subdomain.conf /config/nginx/site-confs/
             cp /fixtures/geoip2.conf /config/nginx/http.d/
+            : > /config/nginx/obsolete.conf.sample
             sed -i "s|error_log stderr warn;|error_log stderr debug;|" /config/nginx/nginx.conf'
 }
 
@@ -264,6 +265,14 @@ docker run -d \
 wait_running "${TARGET}"
 wait_for_log "${LAPI}" 'user_agent="crowdsec-nginx-bouncer/v1.1.6"'
 
+docker exec "${TARGET}" sh -c '
+    test -f /config/nginx/nginx.conf.sample
+    test -f /config/nginx/snippets/resolver.conf.sample
+    test ! -e /config/nginx/obsolete.conf.sample
+    cmp -s /defaults/nginx/nginx.conf /config/nginx/nginx.conf.sample
+    cmp -s /defaults/nginx/snippets/resolver.conf /config/nginx/snippets/resolver.conf.sample
+'
+
 QUIC_HOST_KEY_SHA256="$(docker exec "${TARGET}" sha256sum \
     /config/keys/quic_host.key | awk '{print $1}')"
 docker exec "${TARGET}" sh -c '
@@ -354,10 +363,13 @@ docker run -d \
     -v "${CONFIG_VOLUME}:/config" \
     "${IMAGE}" >/dev/null
 wait_running "${PERSISTED_TARGET}"
-wait_for_log "${PERSISTED_TARGET}" 'different version dates'
+wait_for_log "${PERSISTED_TARGET}" 'different version dates than the shipped samples'
 docker exec "${PERSISTED_TARGET}" grep -Fq \
     '# integration-persistence-marker' /config/nginx/snippets/resolver.conf ||
     fail "persisted configuration was overwritten"
+docker exec "${PERSISTED_TARGET}" grep -Fq \
+    '## Version 2026/07/19' /config/nginx/snippets/resolver.conf.sample ||
+    fail "shipped sample was not refreshed"
 [ "$(docker exec "${PERSISTED_TARGET}" sha256sum \
     /config/keys/quic_host.key | awk '{print $1}')" = "${QUIC_HOST_KEY_SHA256}" ] ||
     fail "QUIC host key changed after container replacement"

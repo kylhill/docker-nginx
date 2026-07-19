@@ -1,0 +1,16 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+
+# Samples are image-managed: remove the previous set, then refresh every
+# shipped sample so users can compare it with the active config in /config.
+find /config/nginx \
+    -type f \
+    -name '*.conf.sample' \
+    -delete
+
+while IFS= read -r -d '' source; do
+    relative_path="${source#/defaults/nginx/}"
+    sample="/config/nginx/${relative_path}.sample"
+    mkdir -p "$(dirname "${sample}")"
+    cp "${source}" "${sample}"
+done < <(find /defaults/nginx -type f -name '*.conf' -print0)
