@@ -9,11 +9,17 @@ on:
 
 concurrency:
   group: docker-nginx-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
+
+env:
+  BUILDX_VERSION: v0.35.0
+  BUILDKIT_IMAGE: moby/buildkit:v0.31.2@sha256:2f5adac4ecd194d9f8c10b7b5d7bceb5186853db1b26e5abd3a657af0b7e26ec
+  QEMU_IMAGE: tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
 
 jobs:
   gate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: read
       packages: read
@@ -24,7 +30,10 @@ jobs:
 
     steps:
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+          driver-opts: image=${{ env.BUILDKIT_IMAGE }}
 
       - name: Resolve upstream base image digest
         id: base
@@ -44,12 +53,6 @@ jobs:
           echo "base_digest=${BASE_DIGEST}" >> "$GITHUB_OUTPUT"
           echo "Upstream base digest: ${BASE_DIGEST}"
 
-      - name: Install scheduled-build inspection tools
-        if: github.event_name == 'schedule'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y skopeo jq
-
       - name: Read published base digest from :latest
         if: github.event_name == 'schedule'
         id: published
@@ -57,19 +60,20 @@ jobs:
         run: |
           set -euo pipefail
           IMAGE="ghcr.io/${{ github.repository }}:latest"
+          ERROR_FILE="$(mktemp)"
 
-          if ! skopeo inspect \
-            --creds "${{ github.repository_owner }}:${{ secrets.GITHUB_TOKEN }}" \
-            "docker://${IMAGE}" >/dev/null 2>&1; then
-            echo "base_digest=" >> "$GITHUB_OUTPUT"
+          if PUBLISHED_BASE_DIGEST="$(docker buildx imagetools inspect \
+            "${IMAGE}" \
+            --format '{{ index (index .Image "linux/amd64").Config.Labels "org.opencontainers.image.base.digest" }}' \
+            2>"${ERROR_FILE}")"; then
+            :
+          elif grep -Eqi 'manifest unknown|name unknown|not found' "${ERROR_FILE}"; then
+            PUBLISHED_BASE_DIGEST=""
             echo "No existing :latest image found; scheduled build required."
-            exit 0
+          else
+            cat "${ERROR_FILE}" >&2
+            exit 1
           fi
-
-          PUBLISHED_BASE_DIGEST="$(skopeo inspect --config \
-            --creds "${{ github.repository_owner }}:${{ secrets.GITHUB_TOKEN }}" \
-            "docker://${IMAGE}" \
-            | jq -r '.config.Labels["org.opencontainers.image.base.digest"] // empty')"
 
           echo "base_digest=${PUBLISHED_BASE_DIGEST}" >> "$GITHUB_OUTPUT"
           echo "Published base digest: ${PUBLISHED_BASE_DIGEST}"
@@ -82,6 +86,12 @@ jobs:
 
           if [[ "${{ github.event_name }}" != "schedule" ]]; then
             echo "Reason: ${{ github.event_name }} event -> build"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$(date -u +%u)" == "7" ]]; then
+            echo "Reason: weekly refresh -> build"
             echo "should_build=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -106,6 +116,8 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/docker-ci.yml
+    with:
+      base_image: ${{ needs.gate.outputs.base_image }}@${{ needs.gate.outputs.base_digest }}
 
   build-and-publish:
     needs: [gate, verify]
@@ -113,14 +125,17 @@ jobs:
       ${{ always() &&
           needs.gate.outputs.should_build == 'true' &&
           needs.verify.result == 'success' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Prepare image metadata
         id: image
@@ -131,30 +146,38 @@ jobs:
           echo "version=${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        with:
+          image: ${{ env.QEMU_IMAGE }}
+          platforms: arm64
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+          driver-opts: image=${{ env.BUILDKIT_IMAGE }}
 
       - name: Log in to GHCR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push multi-platform image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
           pull: true
           no-cache: true
+          build-args: |
+            BASE_IMAGE=${{ needs.gate.outputs.base_image }}@${{ needs.gate.outputs.base_digest }}
           tags: |
             ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ steps.image.outputs.version }}
-          cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: mode=max
           sbom: true
@@ -170,15 +193,49 @@ jobs:
             org.opencontainers.image.version=${{ steps.image.outputs.version }}
             org.opencontainers.image.base.name=${{ needs.gate.outputs.base_image }}
             org.opencontainers.image.base.digest=${{ needs.gate.outputs.base_digest }}
-            io.github.kylhill.docker-nginx.geoipupdate.version=8.0.0
-            io.github.kylhill.docker-nginx.crowdsec-bouncer.version=1.1.6
 
-      - name: Inspect manifest
-        run: docker buildx imagetools inspect ghcr.io/${{ github.repository }}:latest
+      - name: Verify published image
+        shell: bash
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}:latest
+          VERSION_IMAGE: ghcr.io/${{ github.repository }}:${{ steps.image.outputs.version }}
+          EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
+          EXPECTED_BASE_DIGEST: ${{ needs.gate.outputs.base_digest }}
+          EXPECTED_VERSION: ${{ steps.image.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          latest_digest="$(docker buildx imagetools inspect "${IMAGE}" \
+            | sed -n 's/^Digest:[[:space:]]*//p' | head -n1)"
+          version_digest="$(docker buildx imagetools inspect "${VERSION_IMAGE}" \
+            | sed -n 's/^Digest:[[:space:]]*//p' | head -n1)"
+          test "${latest_digest}" = "${EXPECTED_DIGEST}"
+          test "${version_digest}" = "${EXPECTED_DIGEST}"
+
+          manifest="$(docker buildx imagetools inspect "${VERSION_IMAGE}")"
+          printf '%s\n' "${manifest}"
+          grep -q 'Platform:[[:space:]]*linux/amd64' <<<"${manifest}"
+          grep -q 'Platform:[[:space:]]*linux/arm64' <<<"${manifest}"
+
+          for platform in linux/amd64 linux/arm64; do
+            base_digest="$(docker buildx imagetools inspect "${VERSION_IMAGE}" \
+              --format "{{ index (index .Image \"${platform}\").Config.Labels \"org.opencontainers.image.base.digest\" }}")"
+            version="$(docker buildx imagetools inspect "${VERSION_IMAGE}" \
+              --format "{{ index (index .Image \"${platform}\").Config.Labels \"org.opencontainers.image.version\" }}")"
+            test "${base_digest}" = "${EXPECTED_BASE_DIGEST}"
+            test "${version}" = "${EXPECTED_VERSION}"
+          done
+
+          docker buildx imagetools inspect "${VERSION_IMAGE}" \
+            --format '{{json .Provenance}}' > "${RUNNER_TEMP}/provenance.json"
+          docker buildx imagetools inspect "${VERSION_IMAGE}" \
+            --format '{{json .SBOM}}' > "${RUNNER_TEMP}/sbom.json"
+          grep -q '"SLSA"' "${RUNNER_TEMP}/provenance.json"
+          grep -q '"SPDX"' "${RUNNER_TEMP}/sbom.json"
 
       - name: Prune GHCR package versions (keep 10)
         if: github.ref == 'refs/heads/main'
-        uses: actions/delete-package-versions@25ad4af5be03aef10e0b3376b248688b7a44c40b # v5
+        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5.0.0
         with:
           package-type: container
           package-name: ${{ github.event.repository.name }}

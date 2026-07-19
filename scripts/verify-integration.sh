@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 IMAGE="${IMAGE:-docker-nginx:verify}"
 HELPER_IMAGE="${HELPER_IMAGE:-alpine:3.24}"
+HTTP3_CLIENT_IMAGE="${HTTP3_CLIENT_IMAGE:-ubuntu:24.04}"
 PREFIX="${PREFIX:-docker-nginx-integration-$$}"
 TEST_ROOT="$(mktemp -d)"
 
@@ -51,9 +52,11 @@ wait_for_log() {
     local container="$1"
     local pattern="$2"
     local attempts="${3:-30}"
+    local logs
 
     for ((i = 0; i < attempts; i++)); do
-        if docker logs "${container}" 2>&1 | grep -Fq "${pattern}"; then
+        logs="$(docker logs "${container}" 2>&1 || true)"
+        if grep -Fq "${pattern}" <<< "${logs}"; then
             return 0
         fi
         sleep 1
@@ -170,7 +173,7 @@ server {
 
 server {
     listen 8443 ssl;
-    listen 8443 quic;
+    listen 8443 quic reuseport;
     server_name integration.test;
 
     ssl_certificate /config/keys/cert.crt;
@@ -261,6 +264,13 @@ docker run -d \
 wait_running "${TARGET}"
 wait_for_log "${LAPI}" 'user_agent="crowdsec-nginx-bouncer/v1.1.6"'
 
+QUIC_HOST_KEY_SHA256="$(docker exec "${TARGET}" sha256sum \
+    /config/keys/quic_host.key | awk '{print $1}')"
+docker exec "${TARGET}" sh -c '
+    test "$(stat -c %a /config/keys/quic_host.key)" = 600
+    test "$(wc -c < /config/keys/quic_host.key)" = 32
+'
+
 echo "Checking runtime secret paths and _FILE precedence..."
 docker exec "${TARGET}" sh -c '
     test "$(stat -c %a /run/GeoIP.conf)" = 600
@@ -296,20 +306,24 @@ UNIX_BODY="$(docker exec "${TARGET}" curl -sS \
 wait_for_log "${TARGET}" '[Crowdsec] Trusted network client, skipping...'
 wait_for_log "${TARGET}" '[Crowdsec] Unix socket request, skipping...'
 
-echo "Checking TLS, HTTP/2, and HTTP/3/QUIC negotiation..."
+echo "Checking TLS, HTTP/2, and an HTTP/3 request over UDP..."
 HTTP_VERSION="$(docker exec "${TARGET}" curl -sk --http2 -o /dev/null \
     -w '%{http_version}' https://127.0.0.1:8443/)"
 [ "${HTTP_VERSION}" = 2 ] || fail "expected HTTP/2, got HTTP/${HTTP_VERSION}"
 
-if ! docker run --rm --network "${NETWORK}" "${HELPER_IMAGE}" sh -c \
-    "apk add --no-cache openssl >/dev/null && printf '' | timeout 10 openssl s_client -quic -alpn h3 -connect ${TARGET}:8443 -servername integration.test" \
-    >"${TEST_ROOT}/quic.log" 2>&1; then
-    cat "${TEST_ROOT}/quic.log" >&2
-    fail "QUIC handshake command failed"
+if ! docker run --rm --network "${NETWORK}" "${HTTP3_CLIENT_IMAGE}" sh -ec '
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+    apt-get install -y -qq --no-install-recommends ngtcp2-client >/dev/null
+    gtlsclient --exit-on-all-streams-close \
+        "$1" 8443 "https://$1:8443/"
+' sh "${TARGET}" >"${TEST_ROOT}/http3.log" 2>&1; then
+    cat "${TEST_ROOT}/http3.log" >&2
+    fail "HTTP/3 request failed"
 fi
-grep -Fq 'ALPN protocol: h3' "${TEST_ROOT}/quic.log" || {
-    cat "${TEST_ROOT}/quic.log" >&2
-    fail "QUIC handshake did not negotiate h3"
+grep -Fq 'secure-ok' "${TEST_ROOT}/http3.log" || {
+    cat "${TEST_ROOT}/http3.log" >&2
+    fail "HTTP/3 response body was not received"
 }
 
 echo "Checking graceful shutdown and persisted /config..."
@@ -344,6 +358,9 @@ wait_for_log "${PERSISTED_TARGET}" 'different version dates'
 docker exec "${PERSISTED_TARGET}" grep -Fq \
     '# integration-persistence-marker' /config/nginx/snippets/resolver.conf ||
     fail "persisted configuration was overwritten"
+[ "$(docker exec "${PERSISTED_TARGET}" sha256sum \
+    /config/keys/quic_host.key | awk '{print $1}')" = "${QUIC_HOST_KEY_SHA256}" ] ||
+    fail "QUIC host key changed after container replacement"
 docker stop -t 10 "${PERSISTED_TARGET}" >/dev/null
 
 test_geo_failure() {
