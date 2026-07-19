@@ -56,6 +56,7 @@ http {
     lua_shared_dict crowdsec_cache 1m;
     init_by_lua_block {
         require "cjson"
+        require "resty.openssl.x509.chain"
         require "resty.http"
         require "crowdsec"
     }

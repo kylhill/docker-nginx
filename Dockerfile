@@ -33,6 +33,7 @@ RUN set -eux; \
     \
     # install Lua dependencies for crowdsec-nginx-bouncer
     luarocks-5.1 install lua-resty-string; \
+    luarocks-5.1 install lua-resty-openssl; \
     luarocks-5.1 install lua-resty-http; \
     luarocks-5.1 install lua-cjson; \
     \
