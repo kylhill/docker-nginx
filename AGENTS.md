@@ -81,12 +81,13 @@ The `snippets/server-base.conf` is the canonical single include for HTTPS server
 ```
 listen-https.conf  →  port 443 listen directives (including HTTP/2 & HTTP/3/QUIC)
 ssl.conf           →  TLS config (certs from /config/keys/cert.crt + cert.key)
+hsts.conf          →  configurable Strict-Transport-Security header
 geoip-block.conf   →  returns 403 if $access_allowed = no
 no-robots.conf     →  X-Robots-Tag header
 security-headers.conf → security headers
 ```
 
-Use `proxy.conf` for upstream proxy locations — it includes `proxy-common.conf` and `static-assets.conf`.
+Use `proxy.conf` for upstream proxy locations — it includes `proxy-common.conf` and `static-assets.conf`. HTTPS upstream locations should also include `proxy-ssl-verify.conf` when their certificates chain to the system trust bundle.
 
 ### Site conf naming requirement
 
@@ -107,7 +108,9 @@ Generated GeoIPUpdate and CrowdSec credential files live under `/run`; read-only
 The LinuxServer base image supplies `PUID`, `PGID`, `TZ`, and `UMASK`. Explicit
 non-root operation uses the container runtime's `user` setting and requires a
 pre-writable `/config`; do not assume `PUID`/`PGID` change ownership in that
-mode. LinuxServer does not support combining read-only and non-root modes.
+mode. LinuxServer does not generally support combining read-only and non-root
+modes, but this image's integration suite tests its documented combined
+hardening profile.
 
 ### Dockerfile
 

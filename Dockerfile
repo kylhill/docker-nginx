@@ -133,3 +133,6 @@ COPY root/ /
 # ports and volumes
 EXPOSE 80/tcp 443/tcp 443/udp
 VOLUME /config
+
+HEALTHCHECK --interval=5m --timeout=3s --start-period=30s --start-interval=5s --retries=3 \
+  CMD ["curl", "--fail", "--silent", "--show-error", "--max-time", "2", "--unix-socket", "/run/nginx-healthcheck.sock", "http://localhost/health"]

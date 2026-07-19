@@ -66,6 +66,20 @@ done
 echo "Validating nginx config inside running container..."
 docker exec "${CONTAINER}" nginx -t -e stderr
 
+echo "Waiting for the image health check..."
+for ((i = 0; i < 30; i++)); do
+    HEALTH_STATUS="$(docker inspect -f '{{.State.Health.Status}}' "${CONTAINER}" 2>/dev/null || true)"
+    if [ "${HEALTH_STATUS}" = healthy ]; then
+        break
+    fi
+    sleep 1
+done
+[ "${HEALTH_STATUS:-}" = healthy ] || {
+    echo "Container did not become healthy; status: ${HEALTH_STATUS:-missing}" >&2
+    docker inspect -f '{{json .State.Health}}' "${CONTAINER}" >&2 || true
+    exit 1
+}
+
 echo "Checking CrowdSec Lua modules can be loaded during nginx startup..."
 docker exec "${CONTAINER}" sh -lc 'cat > /tmp/crowdsec-lua-load-test.conf <<'"'"'EOF'"'"'
 include /etc/nginx/modules/*.conf;

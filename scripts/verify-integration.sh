@@ -48,6 +48,20 @@ wait_running() {
     fail "${container} did not become ready"
 }
 
+wait_healthy() {
+    local container="$1"
+    local attempts="${2:-30}"
+
+    for ((i = 0; i < attempts; i++)); do
+        if [ "$(docker inspect -f '{{.State.Health.Status}}' "${container}" 2>/dev/null || true)" = healthy ]; then
+            return 0
+        fi
+        sleep 1
+    done
+
+    fail "${container} did not become healthy"
+}
+
 wait_for_log() {
     local container="$1"
     local pattern="$2"
@@ -181,12 +195,20 @@ server {
 
     ssl_certificate /config/keys/cert.crt;
     ssl_certificate_key /config/keys/cert.key;
+    include /config/nginx/snippets/hsts.conf;
+    include /config/nginx/snippets/security-headers.conf;
 
     location / {
         default_type text/plain;
+        add_header X-Integration-Location true always;
         content_by_lua_block {
             ngx.say("secure-ok")
         }
+    }
+
+    location = /proxy-tls-policy {
+        include /config/nginx/snippets/proxy-ssl-verify.conf;
+        return 204;
     }
 }
 EOF
@@ -265,6 +287,7 @@ docker run -d \
     "${IMAGE}" >/dev/null
 
 wait_running "${TARGET}"
+wait_healthy "${TARGET}"
 wait_for_log "${LAPI}" 'user_agent="crowdsec-nginx-bouncer/v1.1.6"'
 wait_for_log "${TARGET}" 'site configs are ignored because their names do not end in .subdomain.conf'
 
@@ -324,6 +347,17 @@ wait_for_log "${TARGET}" '[Crowdsec] Trusted network client, skipping...'
 wait_for_log "${TARGET}" '[Crowdsec] Unix socket request, skipping...'
 
 echo "Checking TLS, HTTP/2, and an HTTP/3 request over UDP..."
+RESPONSE_HEADERS="$(docker exec "${TARGET}" curl -sk --http2 -D - -o /dev/null \
+    https://127.0.0.1:8443/)"
+grep -Fiq 'X-Content-Type-Options: nosniff' <<< "${RESPONSE_HEADERS}" ||
+    fail "X-Content-Type-Options response header missing"
+grep -Fiq 'Referrer-Policy: strict-origin-when-cross-origin' <<< "${RESPONSE_HEADERS}" ||
+    fail "Referrer-Policy response header missing"
+grep -Fiq 'Strict-Transport-Security: max-age=63072000' <<< "${RESPONSE_HEADERS}" ||
+    fail "HSTS response header missing"
+grep -Fiq 'X-Integration-Location: true' <<< "${RESPONSE_HEADERS}" ||
+    fail "location response header missing"
+
 HTTP_VERSION="$(docker exec "${TARGET}" curl -sk --http2 -o /dev/null \
     -w '%{http_version}' https://127.0.0.1:8443/)"
 [ "${HTTP_VERSION}" = 2 ] || fail "expected HTTP/2, got HTTP/${HTTP_VERSION}"
@@ -430,6 +464,10 @@ CONTAINERS+=("${NONROOT_TARGET}")
 docker run -d \
     --name "${NONROOT_TARGET}" \
     --user 1000:1000 \
+    --read-only \
+    --cap-drop ALL \
+    --security-opt no-new-privileges=true \
+    --sysctl net.ipv4.ip_unprivileged_port_start=0 \
     --tmpfs /run:exec,uid=1000,gid=1000 \
     --tmpfs /tmp:uid=1000,gid=1000 \
     -e TZ=Etc/UTC \
@@ -437,7 +475,16 @@ docker run -d \
     -v "${NONROOT_VOLUME}:/config" \
     "${IMAGE}" >/dev/null
 wait_running "${NONROOT_TARGET}"
+wait_healthy "${NONROOT_TARGET}"
 wait_for_log "${NONROOT_TARGET}" 'nginx: configuration file /etc/nginx/nginx.conf test is successful'
+[ "$(docker inspect -f '{{.Config.User}}' "${NONROOT_TARGET}")" = 1000:1000 ] ||
+    fail "non-root user was not applied"
+[ "$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' "${NONROOT_TARGET}")" = true ] ||
+    fail "read-only root filesystem was not applied"
+docker inspect -f '{{json .HostConfig.CapDrop}}' "${NONROOT_TARGET}" | grep -Fqi 'ALL' ||
+    fail "capability drop was not applied"
+docker inspect -f '{{json .HostConfig.SecurityOpt}}' "${NONROOT_TARGET}" | grep -Fqi 'no-new-privileges' ||
+    fail "no-new-privileges was not applied"
 docker exec "${NONROOT_TARGET}" nginx -t -e stderr
 docker stop -t 10 "${NONROOT_TARGET}" >/dev/null
 
