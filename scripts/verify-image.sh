@@ -44,9 +44,11 @@ done
 echo "Validating nginx config inside running container..."
 docker exec "${CONTAINER}" nginx -t
 
-echo "Checking CrowdSec Lua modules can be loaded by nginx..."
+echo "Checking CrowdSec Lua modules can be loaded during nginx startup..."
 docker exec "${CONTAINER}" sh -lc 'cat > /tmp/crowdsec-lua-load-test.conf <<'"'"'EOF'"'"'
 include /etc/nginx/modules/*.conf;
+pid /tmp/crowdsec-lua-load-test.pid;
+error_log stderr;
 events {}
 http {
     lua_package_path "/usr/local/lua/crowdsec/?.lua;/usr/local/share/lua/5.1/?.lua;/usr/local/share/lua/5.1/?/init.lua;;";
@@ -59,7 +61,8 @@ http {
     }
 }
 EOF
-nginx -t -c /tmp/crowdsec-lua-load-test.conf'
+nginx -c /tmp/crowdsec-lua-load-test.conf
+nginx -c /tmp/crowdsec-lua-load-test.conf -s quit'
 
 docker logs "${CONTAINER}" >"${LOG_FILE}" 2>&1 || true
 if grep -Eiq "${LOG_ERROR_REGEX}" "${LOG_FILE}"; then
