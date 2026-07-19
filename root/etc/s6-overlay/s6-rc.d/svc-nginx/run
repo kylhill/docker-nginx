@@ -13,7 +13,7 @@ if pgrep -f "[n]ginx:" >/dev/null; then
     sleep 1
 fi
 
-# shellcheck disable=SC2329 # Invoked indirectly by the TERM trap.
+# shellcheck disable=SC2317,SC2329 # Invoked indirectly by the TERM trap.
 graceful_stop() {
     echo "Container stopping, requesting graceful nginx shutdown"
     kill -QUIT "${nginx_pid}" 2>/dev/null || true
