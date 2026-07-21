@@ -12,6 +12,7 @@ LABEL org.opencontainers.image.title="docker-nginx" \
 # install packages
 RUN set -eux; \
   apk add --no-cache --no-progress \
+    curl \
     nginx \
     nginx-mod-http-brotli \
     nginx-mod-http-geoip2 \
@@ -40,8 +41,6 @@ RUN set -eux; \
     luarocks-5.1 install lua-resty-http; \
     luarocks-5.1 install lua-cjson; \
     \
-    # # cleanup
-    rm -rf /tmp/*; \
     apk del .lua-build-deps
 
 # Install GeoIPUpdate
@@ -49,33 +48,29 @@ ARG GEOIPUPDATE_VERSION=8.0.0
 ARG GEOIPUPDATE_AMD64_SHA256=941eb4dd8c1eafb6ee1d56ccd5f4c62ffbdaca5f65a9f9cadc4008c8d805f2a2
 ARG GEOIPUPDATE_ARM64_SHA256=76cedc3bad8b5f02a3ea42ac84c57d318a758377a07806f7a13189a382f16308
 RUN set -eux; \
-    apk add --no-cache --virtual .geoip-build-deps \
-      curl \
-      tar \
-      ca-certificates; \
-    \
     # detect architecture for GitHub release
     case "$(apk --print-arch)" in \
       x86_64) RELEASE_ARCH="amd64"; GEOIPUPDATE_SHA256="$GEOIPUPDATE_AMD64_SHA256";; \
       aarch64) RELEASE_ARCH="arm64"; GEOIPUPDATE_SHA256="$GEOIPUPDATE_ARM64_SHA256";; \
       *) echo "Unsupported architecture"; exit 1;; \
     esac; \
+    GEOIPUPDATE_ARCHIVE="/tmp/geoipupdate.tar.gz"; \
+    GEOIPUPDATE_DIR="/tmp/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${RELEASE_ARCH}"; \
     \
     # download and verify the tar.gz for the architecture
-    curl -fsSL -o /tmp/geoipupdate.tar.gz \
+    curl -fsSL -o "$GEOIPUPDATE_ARCHIVE" \
       "https://github.com/maxmind/geoipupdate/releases/download/v${GEOIPUPDATE_VERSION}/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${RELEASE_ARCH}.tar.gz"; \
-    printf '%s  %s\n' "$GEOIPUPDATE_SHA256" /tmp/geoipupdate.tar.gz \
-        > /tmp/geoipupdate.sha256; \
-    sha256sum -c /tmp/geoipupdate.sha256; \
+    ACTUAL_SHA256="$(sha256sum "$GEOIPUPDATE_ARCHIVE")"; \
+    ACTUAL_SHA256="${ACTUAL_SHA256%% *}"; \
+    test "$ACTUAL_SHA256" = "$GEOIPUPDATE_SHA256"; \
     \
-    # extract binary and move to /usr/local/bin
-    tar -xzf /tmp/geoipupdate.tar.gz -C /tmp; \
-    mv /tmp/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${RELEASE_ARCH}/geoipupdate /usr/local/bin/geoipupdate; \
-    chmod +x /usr/local/bin/geoipupdate; \
+    # extract and install the binary
+    tar -xzf "$GEOIPUPDATE_ARCHIVE" -C /tmp; \
+    install -m 0755 "$GEOIPUPDATE_DIR/geoipupdate" /usr/local/bin/geoipupdate; \
     \
     # cleanup
-    rm -rf /tmp/*; \
-    apk del .geoip-build-deps
+    rm -f "$GEOIPUPDATE_ARCHIVE"; \
+    rm -rf "$GEOIPUPDATE_DIR"
 
 # Install CrowdSec nginx bouncer
 ARG CROWDSEC_BOUNCER_VERSION=1.1.6
@@ -85,44 +80,45 @@ LABEL io.github.kylhill.docker-nginx.geoipupdate.version="${GEOIPUPDATE_VERSION}
 COPY patches/crowdsec-lua-1.0.14.patch /tmp/crowdsec-lua.patch
 RUN set -eux; \
     apk add --no-cache --virtual .crowdsec-build-deps \
-      curl \
-      patch \
-      tar \
-      ca-certificates; \
+      patch; \
+    CROWDSEC_ARCHIVE="/tmp/bouncer.tgz"; \
+    CROWDSEC_DIR="/tmp/crowdsec-nginx-bouncer-v${CROWDSEC_BOUNCER_VERSION}"; \
     \
     # download, verify, and extract the bouncer tarball
-    curl -fsSL -o /tmp/bouncer.tgz \
+    curl -fsSL -o "$CROWDSEC_ARCHIVE" \
       "https://github.com/crowdsecurity/cs-nginx-bouncer/releases/download/v${CROWDSEC_BOUNCER_VERSION}/crowdsec-nginx-bouncer.tgz"; \
-    printf '%s  %s\n' "$CROWDSEC_BOUNCER_SHA256" /tmp/bouncer.tgz \
-        > /tmp/crowdsec-bouncer.sha256; \
-    sha256sum -c /tmp/crowdsec-bouncer.sha256; \
-    tar -xzf /tmp/bouncer.tgz -C /tmp; \
+    ACTUAL_SHA256="$(sha256sum "$CROWDSEC_ARCHIVE")"; \
+    ACTUAL_SHA256="${ACTUAL_SHA256%% *}"; \
+    test "$ACTUAL_SHA256" = "$CROWDSEC_BOUNCER_SHA256"; \
+    tar -xzf "$CROWDSEC_ARCHIVE" -C /tmp; \
     \
     # Apply the two intentional local behavior fixes without allowing fuzzy
     # matches, so a future upstream source change fails the build.
     patch --batch --forward --fuzz=0 -p1 \
-        -d /tmp/crowdsec-nginx-bouncer-*/lua-mod/lib \
+        -d "$CROWDSEC_DIR/lua-mod/lib" \
         < /tmp/crowdsec-lua.patch; \
     \
     # install Lua library files
-    mkdir -p /usr/local/lua/crowdsec/plugins/crowdsec; \
-    cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/lib/crowdsec.lua /usr/local/lua/crowdsec/; \
-    cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/lib/plugins/crowdsec/*.lua /usr/local/lua/crowdsec/plugins/crowdsec/; \
+    install -Dm 0644 "$CROWDSEC_DIR/lua-mod/lib/crowdsec.lua" \
+      /usr/local/lua/crowdsec/crowdsec.lua; \
+    install -d -m 0755 /usr/local/lua/crowdsec/plugins/crowdsec; \
+    install -m 0644 "$CROWDSEC_DIR"/lua-mod/lib/plugins/crowdsec/*.lua \
+      /usr/local/lua/crowdsec/plugins/crowdsec/; \
     printf 'return "%s"\n' "$CROWDSEC_BOUNCER_VERSION" \
         > /usr/local/lua/crowdsec/bouncer_version.lua; \
     \
     # install ban HTML template only (no captcha)
-    mkdir -p /var/lib/crowdsec/lua/templates; \
-    cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/templates/ban.html /var/lib/crowdsec/lua/templates/; \
+    install -Dm 0644 "$CROWDSEC_DIR/lua-mod/templates/ban.html" \
+      /var/lib/crowdsec/lua/templates/ban.html; \
     \
     # install bouncer config template adjusted by the init-crowdsec s6 service
     # at startup
-    mkdir -p /etc/crowdsec/bouncers; \
-    cp /tmp/crowdsec-nginx-bouncer-*/lua-mod/config_example.conf \
+    install -Dm 0644 "$CROWDSEC_DIR/lua-mod/config_example.conf" \
         /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf.template; \
     \
     # cleanup
-    rm -rf /tmp/*; \
+    rm -f "$CROWDSEC_ARCHIVE" /tmp/crowdsec-lua.patch; \
+    rm -rf "$CROWDSEC_DIR"; \
     apk del .crowdsec-build-deps
 
 ENV GEOIPUPDATE_EDITION_IDS="GeoLite2-Country"
@@ -130,9 +126,8 @@ ENV GEOIPUPDATE_EDITION_IDS="GeoLite2-Country"
 # copy local files
 COPY root/ /
 
-# ports and volumes
+# ports
 EXPOSE 80/tcp 443/tcp 443/udp
-VOLUME /config
 
 HEALTHCHECK --interval=5m --timeout=3s --start-period=30s --start-interval=5s --retries=3 \
   CMD ["curl", "--fail", "--silent", "--show-error", "--max-time", "2", "--unix-socket", "/run/nginx-healthcheck.sock", "http://localhost/health"]

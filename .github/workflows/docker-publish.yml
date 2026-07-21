@@ -182,12 +182,6 @@ jobs:
           provenance: mode=max
           sbom: true
           labels: |
-            org.opencontainers.image.title=docker-nginx
-            org.opencontainers.image.description=nginx reverse proxy on linuxserver.io Alpine base image
-            org.opencontainers.image.url=https://github.com/${{ github.repository }}
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}
-            org.opencontainers.image.licenses=GPL-3.0-only
             org.opencontainers.image.created=${{ steps.image.outputs.created }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.image.outputs.version }}
