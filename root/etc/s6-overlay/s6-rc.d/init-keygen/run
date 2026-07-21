@@ -1,0 +1,33 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+set -e
+
+certificate=/config/keys/cert.crt
+private_key=/config/keys/cert.key
+
+startup_error() {
+    echo "ERROR: $*" >&2
+    printf '1\n' > /run/s6-linux-init-container-results/exitcode
+    /run/s6/basedir/bin/halt
+    return 1
+}
+
+if [[ -f "${certificate}" && -f "${private_key}" ]]; then
+    echo "Using TLS certificate and key found in /config/keys."
+else
+    echo "Generating a self-signed TLS certificate in /config/keys."
+    if ! rm -f "${certificate}" "${private_key}"; then
+        startup_error "Unable to remove incomplete TLS certificate files."
+        exit 1
+    fi
+    umask 077
+    if ! openssl req -new -x509 -days 3650 -nodes \
+            -out "${certificate}" \
+            -keyout "${private_key}" \
+            -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost"; then
+        rm -f "${certificate}" "${private_key}" || true
+        startup_error "Unable to generate the self-signed TLS certificate."
+        exit 1
+    fi
+fi

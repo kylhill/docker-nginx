@@ -182,9 +182,11 @@ jobs:
           provenance: mode=max
           sbom: true
           labels: |
+            build_version=docker-nginx version:- ${{ steps.image.outputs.version }} Build-date:- ${{ steps.image.outputs.created }}
             org.opencontainers.image.created=${{ steps.image.outputs.created }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.image.outputs.version }}
+            org.opencontainers.image.ref.name=${{ steps.image.outputs.version }}
             org.opencontainers.image.base.name=${{ needs.gate.outputs.base_image }}
             org.opencontainers.image.base.digest=${{ needs.gate.outputs.base_digest }}
 
@@ -216,8 +218,17 @@ jobs:
               --format "{{ index (index .Image \"${platform}\").Config.Labels \"org.opencontainers.image.base.digest\" }}")"
             version="$(docker buildx imagetools inspect "${VERSION_IMAGE}" \
               --format "{{ index (index .Image \"${platform}\").Config.Labels \"org.opencontainers.image.version\" }}")"
+            ref_name="$(docker buildx imagetools inspect "${VERSION_IMAGE}" \
+              --format "{{ index (index .Image \"${platform}\").Config.Labels \"org.opencontainers.image.ref.name\" }}")"
+            vendor="$(docker buildx imagetools inspect "${VERSION_IMAGE}" \
+              --format "{{ index (index .Image \"${platform}\").Config.Labels \"org.opencontainers.image.vendor\" }}")"
+            build_version="$(docker buildx imagetools inspect "${VERSION_IMAGE}" \
+              --format "{{ index (index .Image \"${platform}\").Config.Labels \"build_version\" }}")"
             test "${base_digest}" = "${EXPECTED_BASE_DIGEST}"
             test "${version}" = "${EXPECTED_VERSION}"
+            test "${ref_name}" = "${EXPECTED_VERSION}"
+            test "${vendor}" = "Kyle Hill"
+            grep -Fq "docker-nginx version:- ${EXPECTED_VERSION}" <<<"${build_version}"
           done
 
           docker buildx imagetools inspect "${VERSION_IMAGE}" \

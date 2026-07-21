@@ -38,7 +38,10 @@ server {
 }
 ```
 
-`server-base.conf` already pulls in the shared HTTPS listen, SSL, GeoIP, and crawler policy snippets. Certificates are expected at `/config/keys/cert.crt` and `/config/keys/cert.key` by default.
+`server-base.conf` already pulls in the shared HTTPS listen, SSL, GeoIP, and
+crawler policy snippets. On first startup, the image generates a self-signed
+certificate at `/config/keys/cert.crt` with its key at
+`/config/keys/cert.key`. Replace them with your trusted certificate and key.
 
 The catch-all server owns the `reuseport` socket option once for each IPv4 and
 IPv6 HTTPS and QUIC socket. Do not repeat `reuseport` in individual virtual
@@ -180,7 +183,7 @@ cpus: 2.0
 mem_limit: 1g
 ```
 
-The image health check uses an unlogged Unix-socket request every 15 minutes.
+The image health check uses an unlogged Unix-socket request every 5 minutes.
 It exercises nginx request handling without opening another port. Docker marks
 the container unhealthy after three consecutive failures but does not restart
 it solely because it is unhealthy; use your orchestrator or monitoring policy
@@ -188,12 +191,23 @@ for remediation.
 
 ## Dependency Updates
 
-The image follows the newest upstream LinuxServer Alpine tag and resolves current Alpine packages and Lua rocks during each fresh CI build. GeoIPUpdate and the CrowdSec nginx bouncer are fixed to reviewed versions and checksums in the Dockerfile. Published images include SBOM and provenance attestations, and source/run-specific tags provide rollback targets for scheduled rebuilds.
+The image follows the newest upstream LinuxServer Alpine tag and resolves
+current Alpine packages during each fresh CI build. Lua rocks, GeoIPUpdate, and
+the CrowdSec nginx bouncer are fixed to reviewed versions in the Dockerfile;
+downloaded release archives are checksum-verified. Published images include
+SBOM and provenance attestations, and source/run-specific tags provide rollback
+targets for scheduled rebuilds.
 
 ## Notes
 
 - `geoipupdate` runs during the s6 initialization chain when `GEOIPUPDATE_ACCOUNT_ID` and `GEOIPUPDATE_LICENSE_KEY` are set.
 - `GEOIPUPDATE_ACCOUNT_ID`, `GEOIPUPDATE_LICENSE_KEY`, and `CROWDSEC_NGINX_API_KEY` support both this image's `VARIABLE_FILE=/run/secrets/file` form and LinuxServer's standard `FILE__VARIABLE=/run/secrets/file` form. `GEOIPUPDATE_EDITION_IDS` is a non-secret database selection setting.
+- A `VARIABLE_FILE` path must reference a readable regular file, and its
+  corresponding direct variable must be unset. Invalid or conflicting secret
+  configuration stops startup.
 - Enabled site files must end in `.subdomain.conf`; startup warns about other files in `/config/nginx/site-confs/` because nginx ignores them.
+- FastCGI and PHP are unsupported. The image does not ship PHP-FPM or the
+  LinuxServer FastCGI parameter customizations; use a separate application
+  container behind HTTP or HTTPS instead.
 - The image exposes `80/tcp`, `443/tcp`, and `443/udp`. Publish both TCP and UDP port 443 to use HTTP/3/QUIC.
 - Compression defaults include gzip, Brotli, and Zstandard modules.

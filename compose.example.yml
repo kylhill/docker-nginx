@@ -2,6 +2,8 @@ services:
   nginx:
     image: ghcr.io/kylhill/docker-nginx:latest
     restart: unless-stopped
+    stop_grace_period: 30s
+    read_only: true
     environment:
       PUID: "1000"
       PGID: "1000"

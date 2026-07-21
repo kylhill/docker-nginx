@@ -1,12 +1,18 @@
+# syntax=docker/dockerfile:1
+
 # Inspired by https://github.com/linuxserver/docker-baseimage-alpine-nginx/blob/master/Dockerfile
 ARG BASE_IMAGE=ghcr.io/linuxserver/baseimage-alpine:3.24
 FROM ${BASE_IMAGE}
 
-LABEL org.opencontainers.image.title="docker-nginx" \
+LABEL maintainer="Kyle Hill" \
+      build_version="docker-nginx" \
+      org.opencontainers.image.title="docker-nginx" \
       org.opencontainers.image.description="nginx reverse proxy on linuxserver.io Alpine base image" \
       org.opencontainers.image.url="https://github.com/kylhill/docker-nginx" \
       org.opencontainers.image.source="https://github.com/kylhill/docker-nginx" \
       org.opencontainers.image.documentation="https://github.com/kylhill/docker-nginx" \
+      org.opencontainers.image.authors="Kyle Hill" \
+      org.opencontainers.image.vendor="Kyle Hill" \
       org.opencontainers.image.licenses="GPL-3.0-only"
 
 # install packages
@@ -17,7 +23,8 @@ RUN set -eux; \
     nginx-mod-http-brotli \
     nginx-mod-http-geoip2 \
     nginx-mod-http-lua \
-    nginx-mod-http-zstd; \
+    nginx-mod-http-zstd \
+    openssl; \
   # Remove default config
   rm -f /etc/nginx/http.d/default.conf; \
   # Alpine stores its module symlink below this directory. Arbitrary-UID
@@ -28,6 +35,10 @@ RUN set -eux; \
 
 # Install Lua dependencies the same way upstream's Ubuntu installer does.
 # See https://github.com/crowdsecurity/cs-nginx-bouncer/blob/main/install.sh
+ARG LUA_RESTY_STRING_VERSION=0.09-0
+ARG LUA_RESTY_OPENSSL_VERSION=1.8.0-1
+ARG LUA_RESTY_HTTP_VERSION=0.18.0-0
+ARG LUA_CJSON_VERSION=2.1.0.10-1
 RUN set -eux; \
     apk add --no-cache --virtual .lua-build-deps \
       gcc \
@@ -36,10 +47,10 @@ RUN set -eux; \
       musl-dev; \
     \
     # install Lua dependencies for crowdsec-nginx-bouncer
-    luarocks-5.1 install lua-resty-string; \
-    luarocks-5.1 install lua-resty-openssl; \
-    luarocks-5.1 install lua-resty-http; \
-    luarocks-5.1 install lua-cjson; \
+    luarocks-5.1 install lua-resty-string "$LUA_RESTY_STRING_VERSION"; \
+    luarocks-5.1 install lua-resty-openssl "$LUA_RESTY_OPENSSL_VERSION"; \
+    luarocks-5.1 install lua-resty-http "$LUA_RESTY_HTTP_VERSION"; \
+    luarocks-5.1 install lua-cjson "$LUA_CJSON_VERSION"; \
     \
     apk del .lua-build-deps
 

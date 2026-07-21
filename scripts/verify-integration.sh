@@ -48,6 +48,20 @@ wait_running() {
     fail "${container} did not become ready"
 }
 
+wait_stopped() {
+    local container="$1"
+    local attempts="${2:-30}"
+
+    for ((i = 0; i < attempts; i++)); do
+        if [ "$(docker inspect -f '{{.State.Running}}' "${container}" 2>/dev/null || true)" = "false" ]; then
+            return 0
+        fi
+        sleep 1
+    done
+
+    fail "${container} did not stop after initialization failed"
+}
+
 wait_healthy() {
     local container="$1"
     local attempts="${2:-30}"
@@ -253,17 +267,6 @@ new_volume "${CONFIG_VOLUME}"
 bootstrap_config "${CONFIG_VOLUME}"
 install_fixtures "${CONFIG_VOLUME}"
 
-docker run --rm \
-    -v "${CONFIG_VOLUME}:/config" \
-    --entrypoint sh \
-    "${HELPER_IMAGE}" \
-    -c 'apk add --no-cache openssl >/dev/null
-        mkdir -p /config/keys
-        openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
-            -subj "/CN=integration.test" \
-            -keyout /config/keys/cert.key \
-            -out /config/keys/cert.crt >/dev/null 2>&1'
-
 TARGET="${PREFIX}-target"
 CONTAINERS+=("${TARGET}")
 docker run -d \
@@ -273,12 +276,9 @@ docker run -d \
     --read-only \
     --tmpfs /run:exec \
     --tmpfs /tmp \
-    -e CROWDSEC_NGINX_API_KEY=decoy-api-key \
     -e FILE__CROWDSEC_NGINX_API_KEY=/run/secrets/crowdsec_api_key \
     -e CROWDSEC_LAPI_URL="http://${LAPI}:8080" \
-    -e GEOIPUPDATE_ACCOUNT_ID=decoy-account \
     -e GEOIPUPDATE_ACCOUNT_ID_FILE=/run/secrets/maxmind_account \
-    -e GEOIPUPDATE_LICENSE_KEY=decoy-license \
     -e FILE__GEOIPUPDATE_LICENSE_KEY=/run/secrets/maxmind_license \
     -e GEOIPUPDATE_EDITION_IDS=GeoLite2-Country \
     -v "${CONFIG_VOLUME}:/config" \
@@ -306,9 +306,14 @@ docker exec "${TARGET}" sh -c '
 
 QUIC_HOST_KEY_SHA256="$(docker exec "${TARGET}" sha256sum \
     /config/keys/quic_host.key | awk '{print $1}')"
+TLS_CERT_SHA256="$(docker exec "${TARGET}" sha256sum \
+    /config/keys/cert.crt | awk '{print $1}')"
 docker exec "${TARGET}" sh -c '
     test "$(stat -c %a /config/keys/quic_host.key)" = 600
     test "$(wc -c < /config/keys/quic_host.key)" = 32
+    test "$(stat -c %a /config/keys/cert.crt)" = 600
+    test "$(stat -c %a /config/keys/cert.key)" = 600
+    openssl x509 -in /config/keys/cert.crt -noout -checkend 1
 '
 
 echo "Checking runtime secret paths and LinuxServer secret-file conventions..."
@@ -415,6 +420,9 @@ docker exec "${PERSISTED_TARGET}" grep -Fq \
 [ "$(docker exec "${PERSISTED_TARGET}" sha256sum \
     /config/keys/quic_host.key | awk '{print $1}')" = "${QUIC_HOST_KEY_SHA256}" ] ||
     fail "QUIC host key changed after container replacement"
+[ "$(docker exec "${PERSISTED_TARGET}" sha256sum \
+    /config/keys/cert.crt | awk '{print $1}')" = "${TLS_CERT_SHA256}" ] ||
+    fail "generated TLS certificate changed after container replacement"
 docker stop -t 10 "${PERSISTED_TARGET}" >/dev/null
 
 test_geo_failure() {
@@ -441,16 +449,83 @@ test_geo_failure() {
         -v "${volume}:/config" \
         -v "${TEST_ROOT}/geoip-failure:/usr/local/bin/geoipupdate:ro" \
         "${IMAGE}" >/dev/null
-    wait_running "${container}"
-    wait_for_log "${container}" "${expected_log}"
-    docker stop -t 10 "${container}" >/dev/null
+
+    if [ "${scenario}" = cached ]; then
+        wait_running "${container}"
+        wait_for_log "${container}" "${expected_log}"
+        docker stop -t 10 "${container}" >/dev/null
+    else
+        wait_stopped "${container}"
+        wait_for_log "${container}" "${expected_log}"
+        [ "$(docker inspect -f '{{.State.ExitCode}}' "${container}")" -ne 0 ] ||
+            fail "${container} exited successfully after GeoIPUpdate failed without a cache"
+    fi
 }
 
 echo "Checking GeoIPUpdate failure paths..."
 test_geo_failure missing \
-    'geoipupdate failed and no existing database was found'
+    'ERROR: geoipupdate failed and no existing database was found'
 test_geo_failure cached \
     'geoipupdate failed, but an existing database was found'
+
+test_init_failure() {
+    local scenario="$1"
+    local expected_log="$2"
+    shift 2
+    local volume="${PREFIX}-init-failure-${scenario}"
+    local container="${PREFIX}-init-failure-${scenario}"
+
+    new_volume "${volume}"
+    CONTAINERS+=("${container}")
+    docker run -d \
+        --name "${container}" \
+        --read-only \
+        --tmpfs /run:exec \
+        --tmpfs /tmp \
+        -v "${volume}:/config" \
+        -v "${TEST_ROOT}/secrets:/run/secrets:ro" \
+        "$@" \
+        "${IMAGE}" >/dev/null
+    wait_stopped "${container}"
+    wait_for_log "${container}" "${expected_log}"
+    [ "$(docker inspect -f '{{.State.ExitCode}}' "${container}")" -ne 0 ] ||
+        fail "${container} exited successfully after invalid secret configuration"
+}
+
+echo "Checking invalid secret-file configuration..."
+test_init_failure missing-secret \
+    'GEOIPUPDATE_LICENSE_KEY_FILE does not reference a readable regular file' \
+    -e GEOIPUPDATE_ACCOUNT_ID=test-account \
+    -e GEOIPUPDATE_LICENSE_KEY_FILE=/run/secrets/missing
+test_init_failure non-file-secret \
+    'GEOIPUPDATE_LICENSE_KEY_FILE does not reference a readable regular file' \
+    -e GEOIPUPDATE_ACCOUNT_ID=test-account \
+    -e GEOIPUPDATE_LICENSE_KEY_FILE=/config
+test_init_failure conflicting-secret \
+    'Set either CROWDSEC_NGINX_API_KEY or CROWDSEC_NGINX_API_KEY_FILE, not both' \
+    -e CROWDSEC_NGINX_API_KEY=direct-key \
+    -e CROWDSEC_NGINX_API_KEY_FILE=/run/secrets/crowdsec_api_key \
+    -e CROWDSEC_LAPI_URL=http://crowdsec.invalid:8080
+
+echo "Checking TLS key-generation failure handling..."
+KEYGEN_FAILURE_VOLUME="${PREFIX}-keygen-failure"
+KEYGEN_FAILURE_TARGET="${PREFIX}-keygen-failure"
+new_volume "${KEYGEN_FAILURE_VOLUME}"
+docker run --rm -v "${KEYGEN_FAILURE_VOLUME}:/config" "${HELPER_IMAGE}" \
+    sh -c 'mkdir -p /config/keys/cert.crt'
+CONTAINERS+=("${KEYGEN_FAILURE_TARGET}")
+docker run -d \
+    --name "${KEYGEN_FAILURE_TARGET}" \
+    --read-only \
+    --tmpfs /run:exec \
+    --tmpfs /tmp \
+    -v "${KEYGEN_FAILURE_VOLUME}:/config" \
+    "${IMAGE}" >/dev/null
+wait_stopped "${KEYGEN_FAILURE_TARGET}"
+wait_for_log "${KEYGEN_FAILURE_TARGET}" \
+    'ERROR: Unable to remove incomplete TLS certificate files.'
+[ "$(docker inspect -f '{{.State.ExitCode}}' "${KEYGEN_FAILURE_TARGET}")" -ne 0 ] ||
+    fail "${KEYGEN_FAILURE_TARGET} exited successfully after TLS key generation failed"
 
 echo "Checking LinuxServer non-root operation..."
 NONROOT_VOLUME="${PREFIX}-nonroot"
