@@ -80,7 +80,6 @@ The `snippets/server-base.conf` is the canonical single include for HTTPS server
 
 ```
 listen-https.conf  →  port 443 listen directives (including HTTP/2 & HTTP/3/QUIC)
-ssl.conf           →  TLS config (certs from /config/keys/cert.crt + cert.key)
 hsts.conf          →  configurable Strict-Transport-Security header
 geoip-block.conf   →  returns 403 if $access_allowed = no
 no-robots.conf     →  X-Robots-Tag header
