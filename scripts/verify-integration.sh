@@ -105,8 +105,7 @@ bootstrap_config() {
         -v "${volume}:/config" \
         --entrypoint sh \
         "${IMAGE}" \
-        -c 'cp -r /defaults/nginx /config/
-            rm -f /config/nginx/snippets/resolver.conf'
+        -c 'cp -r /defaults/nginx /config/'
 }
 
 install_fixtures() {
@@ -278,7 +277,7 @@ docker run -d \
     --tmpfs /tmp \
     -e FILE__CROWDSEC_NGINX_API_KEY=/run/secrets/crowdsec_api_key \
     -e CROWDSEC_LAPI_URL="http://${LAPI}:8080" \
-    -e GEOIPUPDATE_ACCOUNT_ID_FILE=/run/secrets/maxmind_account \
+    -e FILE__GEOIPUPDATE_ACCOUNT_ID=/run/secrets/maxmind_account \
     -e FILE__GEOIPUPDATE_LICENSE_KEY=/run/secrets/maxmind_license \
     -e GEOIPUPDATE_EDITION_IDS=GeoLite2-Country \
     -v "${CONFIG_VOLUME}:/config" \
@@ -293,13 +292,15 @@ wait_for_log "${TARGET}" 'site configs are ignored because their names do not en
 
 docker exec "${TARGET}" sh -c '
     test -f /config/nginx/nginx.conf.sample
-    test -f /config/nginx/snippets/resolver.conf.sample
+    test ! -e /config/nginx/snippets/resolver.conf.sample
     test ! -e /config/nginx/snippets/static-assets.conf.sample
     test ! -e /config/nginx/obsolete.conf.sample
     cmp -s /defaults/nginx/nginx.conf /config/nginx/nginx.conf.sample
-    cmp -s /defaults/nginx/snippets/resolver.conf /config/nginx/snippets/resolver.conf.sample
-    grep -q "^resolver " /config/nginx/snippets/resolver.conf
-    grep -Fq "Generated from the container" /config/nginx/snippets/resolver.conf
+    test ! -e /config/nginx/snippets/resolver.conf
+    grep -q "^resolver " /run/nginx/resolver.conf
+    grep -Fq "Generated from the container" /run/nginx/resolver.conf
+    test -f /run/nginx/http.d/crowdsec.conf
+    test ! -e /config/nginx/http.d/crowdsec.conf
     test "$((0$(stat -c %a /config/nginx/nginx.conf) & 0020))" -ne 0
     test "$((0$(stat -c %a /config/nginx/nginx.conf.sample) & 0020))" -ne 0
 '
@@ -324,6 +325,7 @@ docker exec "${TARGET}" sh -c '
     grep -q "^LicenseKey file-license$" /run/GeoIP.conf
     grep -q "^EditionIDs GeoLite2-Country$" /run/GeoIP.conf
     grep -q "^API_KEY=test-api-key$" /run/crowdsec/crowdsec-nginx-bouncer.conf
+    test -f /run/nginx/http.d/crowdsec.conf
     test ! -e /etc/GeoIP.conf
     test ! -e /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf
     ! grep -R -q "test-api-key" /config
@@ -384,9 +386,14 @@ grep -Fq 'secure-ok' "${TEST_ROOT}/http3.log" || {
 
 echo "Checking graceful shutdown and persisted /config..."
 docker exec "${TARGET}" sh -c \
-    'printf "\\n# integration-persistence-marker\\n" >> /config/nginx/snippets/resolver.conf'
+    'printf "\\n# integration-persistence-marker\\n" >> /config/nginx/snippets/hsts.conf
+     cat > /config/nginx/snippets/resolver-override.conf <<EOF
+## User-managed resolver override
+resolver 127.0.0.1 ipv6=off valid=30s;
+resolver_timeout 1s;
+EOF'
 docker exec "${TARGET}" sed -i \
-    '1s|2026/07/20|2020/01/01|' /config/nginx/snippets/resolver.conf
+    '1s|2026/07/20|2020/01/01|' /config/nginx/snippets/hsts.conf
 
 docker exec "${TRUSTED_CLIENT}" curl -sS "http://${TARGET}:8080/slow" \
     >"${TEST_ROOT}/slow-response" &
@@ -412,11 +419,14 @@ docker run -d \
 wait_running "${PERSISTED_TARGET}"
 wait_for_log "${PERSISTED_TARGET}" 'different version dates than the shipped samples'
 docker exec "${PERSISTED_TARGET}" grep -Fq \
-    '# integration-persistence-marker' /config/nginx/snippets/resolver.conf ||
+    '# integration-persistence-marker' /config/nginx/snippets/hsts.conf ||
     fail "persisted configuration was overwritten"
 docker exec "${PERSISTED_TARGET}" grep -Fq \
-    '## Version 2026/07/20' /config/nginx/snippets/resolver.conf.sample ||
+    '## Version 2026/07/20' /config/nginx/snippets/hsts.conf.sample ||
     fail "shipped sample was not refreshed"
+docker exec "${PERSISTED_TARGET}" cmp -s \
+    /config/nginx/snippets/resolver-override.conf /run/nginx/resolver.conf ||
+    fail "persistent resolver override was not installed into the runtime config"
 [ "$(docker exec "${PERSISTED_TARGET}" sha256sum \
     /config/keys/quic_host.key | awk '{print $1}')" = "${QUIC_HOST_KEY_SHA256}" ] ||
     fail "QUIC host key changed after container replacement"
@@ -489,23 +499,58 @@ test_init_failure() {
     wait_stopped "${container}"
     wait_for_log "${container}" "${expected_log}"
     [ "$(docker inspect -f '{{.State.ExitCode}}' "${container}")" -ne 0 ] ||
-        fail "${container} exited successfully after invalid secret configuration"
+        fail "${container} exited successfully after invalid startup configuration"
 }
 
-echo "Checking invalid secret-file configuration..."
-test_init_failure missing-secret \
-    'GEOIPUPDATE_LICENSE_KEY_FILE does not reference a readable regular file' \
+echo "Checking unsupported legacy secret-file variables..."
+test_init_failure legacy-geoip-file \
+    'GEOIPUPDATE_ACCOUNT_ID and GEOIPUPDATE_LICENSE_KEY must both be set' \
     -e GEOIPUPDATE_ACCOUNT_ID=test-account \
-    -e GEOIPUPDATE_LICENSE_KEY_FILE=/run/secrets/missing
-test_init_failure non-file-secret \
-    'GEOIPUPDATE_LICENSE_KEY_FILE does not reference a readable regular file' \
-    -e GEOIPUPDATE_ACCOUNT_ID=test-account \
-    -e GEOIPUPDATE_LICENSE_KEY_FILE=/config
-test_init_failure conflicting-secret \
-    'Set either CROWDSEC_NGINX_API_KEY or CROWDSEC_NGINX_API_KEY_FILE, not both' \
-    -e CROWDSEC_NGINX_API_KEY=direct-key \
+    -e GEOIPUPDATE_LICENSE_KEY_FILE=/run/secrets/maxmind_license
+test_init_failure legacy-crowdsec-file \
+    'CROWDSEC_NGINX_API_KEY and CROWDSEC_LAPI_URL must both be set' \
     -e CROWDSEC_NGINX_API_KEY_FILE=/run/secrets/crowdsec_api_key \
     -e CROWDSEC_LAPI_URL=http://crowdsec.invalid:8080
+
+echo "Checking partial feature configuration..."
+test_init_failure partial-geoip-account \
+    'GEOIPUPDATE_ACCOUNT_ID and GEOIPUPDATE_LICENSE_KEY must both be set' \
+    -e GEOIPUPDATE_ACCOUNT_ID=test-account
+test_init_failure partial-geoip-license \
+    'GEOIPUPDATE_ACCOUNT_ID and GEOIPUPDATE_LICENSE_KEY must both be set' \
+    -e GEOIPUPDATE_LICENSE_KEY=test-license
+test_init_failure partial-crowdsec-key \
+    'CROWDSEC_NGINX_API_KEY and CROWDSEC_LAPI_URL must both be set' \
+    -e CROWDSEC_NGINX_API_KEY=test-key
+test_init_failure partial-crowdsec-url \
+    'CROWDSEC_NGINX_API_KEY and CROWDSEC_LAPI_URL must both be set' \
+    -e CROWDSEC_LAPI_URL=http://crowdsec.invalid:8080
+
+echo "Checking obsolete CrowdSec include handling..."
+CROWDSEC_COLLISION_VOLUME="${PREFIX}-crowdsec-collision"
+CROWDSEC_COLLISION_TARGET="${PREFIX}-crowdsec-collision"
+new_volume "${CROWDSEC_COLLISION_VOLUME}"
+bootstrap_config "${CROWDSEC_COLLISION_VOLUME}"
+docker run --rm -v "${CROWDSEC_COLLISION_VOLUME}:/config" "${HELPER_IMAGE}" \
+    sh -c 'printf "%s\n" "# user-managed-crowdsec-marker" > /config/nginx/http.d/crowdsec.conf'
+CONTAINERS+=("${CROWDSEC_COLLISION_TARGET}")
+docker run -d \
+    --name "${CROWDSEC_COLLISION_TARGET}" \
+    --read-only \
+    --tmpfs /run:exec \
+    --tmpfs /tmp \
+    -e CROWDSEC_NGINX_API_KEY=test-key \
+    -e CROWDSEC_LAPI_URL=http://crowdsec.invalid:8080 \
+    -v "${CROWDSEC_COLLISION_VOLUME}:/config" \
+    "${IMAGE}" >/dev/null
+wait_stopped "${CROWDSEC_COLLISION_TARGET}"
+wait_for_log "${CROWDSEC_COLLISION_TARGET}" \
+    'Remove the obsolete /config/nginx/http.d/crowdsec.conf before enabling CrowdSec'
+[ "$(docker inspect -f '{{.State.ExitCode}}' "${CROWDSEC_COLLISION_TARGET}")" -ne 0 ] ||
+    fail "${CROWDSEC_COLLISION_TARGET} exited successfully after a CrowdSec include collision"
+docker run --rm -v "${CROWDSEC_COLLISION_VOLUME}:/config" "${HELPER_IMAGE}" \
+    grep -Fq '# user-managed-crowdsec-marker' /config/nginx/http.d/crowdsec.conf ||
+    fail "user-managed CrowdSec include was removed"
 
 echo "Checking TLS key-generation failure handling..."
 KEYGEN_FAILURE_VOLUME="${PREFIX}-keygen-failure"

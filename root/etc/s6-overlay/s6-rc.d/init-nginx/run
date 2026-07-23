@@ -6,11 +6,6 @@
 # user-managed active files are never replaced.
 while IFS= read -r -d '' source; do
     relative_path="${source#/defaults/}"
-    # resolver.conf is generated from /etc/resolv.conf by init-resolver. Keep
-    # the shipped copy only as the adjacent host-visible sample.
-    if [ "${relative_path}" = "nginx/snippets/resolver.conf" ]; then
-        continue
-    fi
     destination="/config/${relative_path}"
     if [ ! -e "${destination}" ]; then
         mkdir -p "$(dirname "${destination}")"

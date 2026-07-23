@@ -12,41 +12,23 @@ startup_error() {
     return 1
 }
 
-read_secret() {
-    local var="$1"
-    local file_var="${var}_FILE"
-    local value="${!var:-}"
-    local secret_file="${!file_var:-}"
-
-    if [[ -n "${value}" && -n "${secret_file}" ]]; then
-        startup_error "Set either ${var} or ${file_var}, not both."
-        return 1
-    fi
-    if [[ -n "${secret_file}" ]]; then
-        if [[ ! -f "${secret_file}" || ! -r "${secret_file}" ]]; then
-            startup_error "${file_var} does not reference a readable regular file: ${secret_file}"
-            return 1
-        fi
-        if ! cat "${secret_file}"; then
-            startup_error "Unable to read the file referenced by ${file_var}: ${secret_file}"
-            return 1
-        fi
-    else
-        printf '%s' "${value}"
-    fi
-}
-
-API_KEY="$(read_secret CROWDSEC_NGINX_API_KEY)"
+API_KEY="${CROWDSEC_NGINX_API_KEY:-}"
 BOUNCER_CONF=/run/crowdsec/crowdsec-nginx-bouncer.conf
 BOUNCER_CONF_TEMPLATE=/etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf.template
-NGINX_CROWDSEC_INCLUDE=/config/nginx/http.d/crowdsec.conf
+NGINX_CROWDSEC_INCLUDE=/run/nginx/http.d/crowdsec.conf
 NGINX_CROWDSEC_INCLUDE_DEFAULT=/defaults/nginx/templates/crowdsec.conf
 
+mkdir -p /run/crowdsec /run/nginx/http.d
 rm -f "${NGINX_CROWDSEC_INCLUDE}" "${BOUNCER_CONF}"
 
-if [ -n "${API_KEY}" ] && [ -n "${CROWDSEC_LAPI_URL:-}" ]; then
+if [[ -n "${API_KEY}" || -n "${CROWDSEC_LAPI_URL:-}" || -n "${CROWDSEC_APPSEC_URL:-}" ]]; then
+    if [[ -z "${API_KEY}" || -z "${CROWDSEC_LAPI_URL:-}" ]]; then
+        startup_error \
+            "CROWDSEC_NGINX_API_KEY and CROWDSEC_LAPI_URL must both be set when CrowdSec is configured."
+        exit 1
+    fi
+
     echo "Configuring CrowdSec nginx bouncer..."
-    mkdir -p /config/nginx/http.d /run/crowdsec
 
     # The nginx include is static. The bouncer config needs runtime secrets.
     awk \
@@ -83,5 +65,5 @@ if [ -n "${API_KEY}" ] && [ -n "${CROWDSEC_LAPI_URL:-}" ]; then
     chmod 0600 "${BOUNCER_CONF}"
     install -m 0644 "${NGINX_CROWDSEC_INCLUDE_DEFAULT}" "${NGINX_CROWDSEC_INCLUDE}"
 else
-    echo "CrowdSec credentials not set, nginx bouncer disabled."
+    echo "CrowdSec configuration not set, nginx bouncer disabled."
 fi

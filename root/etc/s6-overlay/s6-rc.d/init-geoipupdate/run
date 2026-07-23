@@ -12,34 +12,18 @@ startup_error() {
     return 1
 }
 
-read_secret() {
-    local var="$1"
-    local file_var="${var}_FILE"
-    local value="${!var:-}"
-    local secret_file="${!file_var:-}"
-
-    if [[ -n "${value}" && -n "${secret_file}" ]]; then
-        startup_error "Set either ${var} or ${file_var}, not both."
-        return 1
-    fi
-    if [[ -n "${secret_file}" ]]; then
-        if [[ ! -f "${secret_file}" || ! -r "${secret_file}" ]]; then
-            startup_error "${file_var} does not reference a readable regular file: ${secret_file}"
-            return 1
-        fi
-        if ! cat "${secret_file}"; then
-            startup_error "Unable to read the file referenced by ${file_var}: ${secret_file}"
-            return 1
-        fi
-    else
-        printf '%s' "${value}"
-    fi
-}
-
-ACCOUNT_ID="$(read_secret GEOIPUPDATE_ACCOUNT_ID)"
-LICENSE_KEY="$(read_secret GEOIPUPDATE_LICENSE_KEY)"
+ACCOUNT_ID="${GEOIPUPDATE_ACCOUNT_ID:-}"
+LICENSE_KEY="${GEOIPUPDATE_LICENSE_KEY:-}"
 EDITION_IDS="${GEOIPUPDATE_EDITION_IDS}"
 GEOIP_CONF=/run/GeoIP.conf
+
+if [[ -n "${ACCOUNT_ID}" || -n "${LICENSE_KEY}" ]]; then
+    if [[ -z "${ACCOUNT_ID}" || -z "${LICENSE_KEY}" ]]; then
+        startup_error \
+            "GEOIPUPDATE_ACCOUNT_ID and GEOIPUPDATE_LICENSE_KEY must both be set when GeoIPUpdate is configured."
+        exit 1
+    fi
+fi
 
 if [[ -n "${ACCOUNT_ID}" && -n "${LICENSE_KEY}" ]]; then
     echo "Configuring GeoIPUpdate..."

@@ -17,9 +17,10 @@ config's date differs from its sample, startup prints a reconciliation warning
 and leaves the active file unchanged. Compare the two files in the host-mounted
 `/config` directory and apply changes manually. Remaining `.conf.sample` files
 are image-managed and refreshed on every startup.
-The active resolver snippet is generated once from the nameservers in the
-container's `/etc/resolv.conf`; an existing `/config/nginx/snippets/resolver.conf`
-is never replaced.
+The active resolver snippet is regenerated at `/run/nginx/resolver.conf` from
+the nameservers in the container's `/etc/resolv.conf` on every start. To use a
+persistent custom resolver, create
+`/config/nginx/snippets/resolver-override.conf`.
 
 ## Reverse Proxy Example
 
@@ -128,9 +129,10 @@ The image creates `/config/keys/quic_host.key` on first startup and reuses it
 across reloads and container replacements. Back it up with the rest of
 `/config`; changing it invalidates previously issued QUIC validation tokens.
 
-CrowdSec and GeoIPUpdate generate credential-bearing runtime configuration
-under `/run` rather than the image filesystem. To run with a read-only root,
-keep `/config` writable and provide tmpfs mounts for `/run:exec` and `/tmp`:
+CrowdSec, GeoIPUpdate, and the generated nginx resolver configuration live
+under `/run` rather than the persistent config or image filesystem. To run with
+a read-only root, keep `/config` writable and provide tmpfs mounts for
+`/run:exec` and `/tmp`:
 
 ```yaml
 read_only: true
@@ -201,10 +203,13 @@ targets for scheduled rebuilds.
 ## Notes
 
 - `geoipupdate` runs during the s6 initialization chain when `GEOIPUPDATE_ACCOUNT_ID` and `GEOIPUPDATE_LICENSE_KEY` are set.
-- `GEOIPUPDATE_ACCOUNT_ID`, `GEOIPUPDATE_LICENSE_KEY`, and `CROWDSEC_NGINX_API_KEY` support both this image's `VARIABLE_FILE=/run/secrets/file` form and LinuxServer's standard `FILE__VARIABLE=/run/secrets/file` form. `GEOIPUPDATE_EDITION_IDS` is a non-secret database selection setting.
-- A `VARIABLE_FILE` path must reference a readable regular file, and its
-  corresponding direct variable must be unset. Invalid or conflicting secret
-  configuration stops startup.
+- CrowdSec writes its generated nginx include to `/run/nginx/http.d/crowdsec.conf`.
+- `GEOIPUPDATE_ACCOUNT_ID`, `GEOIPUPDATE_LICENSE_KEY`, and
+  `CROWDSEC_NGINX_API_KEY` accept direct values or LinuxServer's standard
+  `FILE__VARIABLE=/run/secrets/file` form.
+- CrowdSec requires both `CROWDSEC_NGINX_API_KEY` and `CROWDSEC_LAPI_URL` when
+  any CrowdSec setting is present. GeoIPUpdate likewise requires both its
+  account ID and license key. Partial feature configuration stops startup.
 - Enabled site files must end in `.subdomain.conf`; startup warns about other files in `/config/nginx/site-confs/` because nginx ignores them.
 - FastCGI and PHP are unsupported. The image does not ship PHP-FPM or the
   LinuxServer FastCGI parameter customizations; use a separate application

@@ -2,9 +2,19 @@
 # shellcheck shell=bash
 set -e
 
-resolver_conf=/config/nginx/snippets/resolver.conf
+resolver_conf=/run/nginx/resolver.conf
+resolver_override=/config/nginx/snippets/resolver-override.conf
 
-if [ ! -e "${resolver_conf}" ]; then
+mkdir -p "$(dirname "${resolver_conf}")"
+
+if [ -e "${resolver_override}" ]; then
+    if [ ! -f "${resolver_override}" ] || [ ! -r "${resolver_override}" ]; then
+        echo "ERROR: Resolver override is not a readable regular file: ${resolver_override}" >&2
+        exit 1
+    fi
+    echo "Using persistent nginx resolver override from ${resolver_override}."
+    cp "${resolver_override}" "${resolver_conf}"
+else
     resolver_servers="$(awk '
         $1 == "nameserver" {
             server = $2
@@ -20,10 +30,9 @@ if [ ! -e "${resolver_conf}" ]; then
         echo "WARNING: /etc/resolv.conf contained no nameservers; using ${resolver_servers}."
     fi
 
-    echo "Generating nginx resolver configuration from /etc/resolv.conf..."
-    mkdir -p "$(dirname "${resolver_conf}")"
+    echo "Generating nginx runtime resolver configuration from /etc/resolv.conf..."
     {
-        echo "## Version 2026/07/20 - Generated from the container's /etc/resolv.conf."
+        echo "## Generated from the container's /etc/resolv.conf at startup."
         echo "resolver ${resolver_servers} ipv6=off valid=300s;"
         echo "resolver_timeout 2s;"
     } > "${resolver_conf}"
