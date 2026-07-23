@@ -108,8 +108,8 @@ RUN set -eux; \
     install -Dm 0644 "$CROWDSEC_DIR/lua-mod/templates/ban.html" \
       /var/lib/crowdsec/lua/templates/ban.html; \
     \
-    # install bouncer config template adjusted by the init-crowdsec s6 service
-    # at startup
+    # install bouncer config template adjusted by the namespaced CrowdSec s6
+    # service at startup
     install -Dm 0644 "$CROWDSEC_DIR/lua-mod/config_example.conf" \
         /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf.template; \
     \
