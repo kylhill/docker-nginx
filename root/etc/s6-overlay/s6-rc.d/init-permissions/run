@@ -1,15 +1,16 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
+set -Eeuo pipefail
 
 chmod -R g+w /config/nginx
 
-if [[ -z ${LSIO_READ_ONLY_FS} ]] && [[ -z ${LSIO_NON_ROOT_USER} ]]; then
+if [[ -z ${LSIO_READ_ONLY_FS:-} ]] && [[ -z ${LSIO_NON_ROOT_USER:-} ]]; then
     # permissions
     lsiown -R abc:abc \
         /var/lib/nginx
 fi
 
-if [[ -z ${LSIO_NON_ROOT_USER} ]]; then
+if [[ -z ${LSIO_NON_ROOT_USER:-} ]]; then
     lsiown -R abc:abc \
         /config/geoip \
         /config/keys \

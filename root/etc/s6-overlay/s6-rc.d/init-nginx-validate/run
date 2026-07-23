@@ -1,6 +1,6 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
-set -e
+set -Eeuo pipefail
 
 echo "Validating nginx configuration..."
 /usr/sbin/nginx -t -e stderr 2>&1

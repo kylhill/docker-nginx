@@ -1,4 +1,5 @@
 #!/bin/sh
+set -eu
 
 if [ ! -s /run/GeoIP.conf ]; then
 	echo "GeoIPUpdate config not found, skipping update."

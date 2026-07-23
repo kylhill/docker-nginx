@@ -1,6 +1,6 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
-set -e
+set -Eeuo pipefail
 
 version_mismatches=""
 while IFS= read -r -d '' active_config; do

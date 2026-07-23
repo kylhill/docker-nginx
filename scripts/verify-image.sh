@@ -87,12 +87,11 @@ pid /tmp/crowdsec-lua-load-test.pid;
 error_log stderr;
 events {}
 http {
-    lua_package_path "/usr/local/lua/crowdsec/?.lua;/usr/local/share/lua/5.1/?.lua;/usr/local/share/lua/5.1/?/init.lua;;";
+    lua_package_path "/usr/local/lua/crowdsec/?.lua;/usr/share/lua/common/?.lua;/usr/share/lua/common/?/init.lua;;";
     lua_package_cpath "/usr/local/lib/lua/5.1/?.so;;";
     lua_shared_dict crowdsec_cache 1m;
     init_by_lua_block {
         require "cjson"
-        require "resty.openssl.x509.chain"
         require "resty.http"
         require "crowdsec"
     }

@@ -5,7 +5,6 @@ ARG BASE_IMAGE=ghcr.io/linuxserver/baseimage-alpine:3.24
 FROM ${BASE_IMAGE}
 
 LABEL maintainer="Kyle Hill" \
-      build_version="docker-nginx" \
       org.opencontainers.image.title="docker-nginx" \
       org.opencontainers.image.description="nginx reverse proxy on linuxserver.io Alpine base image" \
       org.opencontainers.image.url="https://github.com/kylhill/docker-nginx" \
@@ -17,14 +16,22 @@ LABEL maintainer="Kyle Hill" \
 
 # install packages
 RUN set -eux; \
+  # lua-resty-string declares an OpenResty-specific package dependency even
+  # though nginx-mod-http-lua provides the same Lua runtime. Extract the
+  # architecture-independent Lua files without installing a second nginx.
+  apk fetch --no-cache --no-progress --output /tmp lua-resty-string; \
   apk add --no-cache --no-progress \
     curl \
+    lua-resty-http \
+    lua5.1-cjson \
     nginx \
     nginx-mod-http-brotli \
     nginx-mod-http-geoip2 \
     nginx-mod-http-lua \
     nginx-mod-http-zstd \
     openssl; \
+  tar -xzf /tmp/lua-resty-string-*.apk -C / usr/share/lua/common; \
+  rm -f /tmp/lua-resty-string-*.apk; \
   # Remove default config
   rm -f /etc/nginx/http.d/default.conf; \
   # Alpine stores its module symlink below this directory. Arbitrary-UID
@@ -32,27 +39,6 @@ RUN set -eux; \
   chmod 0755 /var/lib/nginx; \
   # Remove default /var/www content
   find /var/www -mindepth 1 ! -path /var/www/favicon.ico -exec rm -rf {} +;
-
-# Install Lua dependencies the same way upstream's Ubuntu installer does.
-# See https://github.com/crowdsecurity/cs-nginx-bouncer/blob/main/install.sh
-ARG LUA_RESTY_STRING_VERSION=0.09-0
-ARG LUA_RESTY_OPENSSL_VERSION=1.8.0-1
-ARG LUA_RESTY_HTTP_VERSION=0.18.0-0
-ARG LUA_CJSON_VERSION=2.1.0.10-1
-RUN set -eux; \
-    apk add --no-cache --virtual .lua-build-deps \
-      gcc \
-      lua5.1-dev \
-      luarocks5.1 \
-      musl-dev; \
-    \
-    # install Lua dependencies for crowdsec-nginx-bouncer
-    luarocks-5.1 install lua-resty-string "$LUA_RESTY_STRING_VERSION"; \
-    luarocks-5.1 install lua-resty-openssl "$LUA_RESTY_OPENSSL_VERSION"; \
-    luarocks-5.1 install lua-resty-http "$LUA_RESTY_HTTP_VERSION"; \
-    luarocks-5.1 install lua-cjson "$LUA_CJSON_VERSION"; \
-    \
-    apk del .lua-build-deps
 
 # Install GeoIPUpdate
 ARG GEOIPUPDATE_VERSION=8.0.0
@@ -71,16 +57,16 @@ RUN set -eux; \
     # download and verify the tar.gz for the architecture
     curl -fsSL -o "$GEOIPUPDATE_ARCHIVE" \
       "https://github.com/maxmind/geoipupdate/releases/download/v${GEOIPUPDATE_VERSION}/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${RELEASE_ARCH}.tar.gz"; \
-    ACTUAL_SHA256="$(sha256sum "$GEOIPUPDATE_ARCHIVE")"; \
-    ACTUAL_SHA256="${ACTUAL_SHA256%% *}"; \
-    test "$ACTUAL_SHA256" = "$GEOIPUPDATE_SHA256"; \
+    echo "${GEOIPUPDATE_SHA256}  ${GEOIPUPDATE_ARCHIVE}" \
+      > "${GEOIPUPDATE_ARCHIVE}.sha256"; \
+    sha256sum -c "${GEOIPUPDATE_ARCHIVE}.sha256"; \
     \
     # extract and install the binary
     tar -xzf "$GEOIPUPDATE_ARCHIVE" -C /tmp; \
     install -m 0755 "$GEOIPUPDATE_DIR/geoipupdate" /usr/local/bin/geoipupdate; \
     \
     # cleanup
-    rm -f "$GEOIPUPDATE_ARCHIVE"; \
+    rm -f "$GEOIPUPDATE_ARCHIVE" "${GEOIPUPDATE_ARCHIVE}.sha256"; \
     rm -rf "$GEOIPUPDATE_DIR"
 
 # Install CrowdSec nginx bouncer
@@ -98,9 +84,9 @@ RUN set -eux; \
     # download, verify, and extract the bouncer tarball
     curl -fsSL -o "$CROWDSEC_ARCHIVE" \
       "https://github.com/crowdsecurity/cs-nginx-bouncer/releases/download/v${CROWDSEC_BOUNCER_VERSION}/crowdsec-nginx-bouncer.tgz"; \
-    ACTUAL_SHA256="$(sha256sum "$CROWDSEC_ARCHIVE")"; \
-    ACTUAL_SHA256="${ACTUAL_SHA256%% *}"; \
-    test "$ACTUAL_SHA256" = "$CROWDSEC_BOUNCER_SHA256"; \
+    echo "${CROWDSEC_BOUNCER_SHA256}  ${CROWDSEC_ARCHIVE}" \
+      > "${CROWDSEC_ARCHIVE}.sha256"; \
+    sha256sum -c "${CROWDSEC_ARCHIVE}.sha256"; \
     tar -xzf "$CROWDSEC_ARCHIVE" -C /tmp; \
     \
     # Apply the two intentional local behavior fixes without allowing fuzzy
@@ -128,11 +114,13 @@ RUN set -eux; \
         /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf.template; \
     \
     # cleanup
-    rm -f "$CROWDSEC_ARCHIVE" /tmp/crowdsec-lua.patch; \
+    rm -f "$CROWDSEC_ARCHIVE" "${CROWDSEC_ARCHIVE}.sha256" \
+      /tmp/crowdsec-lua.patch; \
     rm -rf "$CROWDSEC_DIR"; \
     apk del .crowdsec-build-deps
 
-ENV GEOIPUPDATE_EDITION_IDS="GeoLite2-Country"
+ENV GEOIPUPDATE_EDITION_IDS="GeoLite2-Country" \
+    S6_BEHAVIOUR_IF_STAGE2_FAILS="2"
 
 # copy local files
 COPY root/ /

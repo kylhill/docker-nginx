@@ -1,5 +1,6 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
+set -Eeuo pipefail
 
 # Samples are image-managed: remove the previous set, then refresh every
 # shipped sample so users can compare it with the active config in /config.

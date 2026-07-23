@@ -194,11 +194,17 @@ for remediation.
 ## Dependency Updates
 
 The image follows the newest upstream LinuxServer Alpine tag and resolves
-current Alpine packages during each fresh CI build. Lua rocks, GeoIPUpdate, and
-the CrowdSec nginx bouncer are fixed to reviewed versions in the Dockerfile;
+current Alpine packages during each fresh CI build. GeoIPUpdate and the
+CrowdSec nginx bouncer are fixed to reviewed versions in the Dockerfile;
 downloaded release archives are checksum-verified. Published images include
 SBOM and provenance attestations, and source/run-specific tags provide rollback
 targets for scheduled rebuilds.
+
+Run `scripts/check-updates.sh` to verify pinned release checksums and report
+new GeoIPUpdate or CrowdSec bouncer releases. Run
+`scripts/check-updates.sh --update` to update the Dockerfile versions,
+checksums, and matching integration-test expectation; review the resulting
+diff and run the full verification suite before publishing.
 
 ## Notes
 

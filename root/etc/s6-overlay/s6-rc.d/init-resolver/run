@@ -1,6 +1,6 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
-set -e
+set -Eeuo pipefail
 
 resolver_conf=/run/nginx/resolver.conf
 resolver_override=/config/nginx/snippets/resolver-override.conf

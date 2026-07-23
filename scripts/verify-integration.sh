@@ -295,6 +295,8 @@ docker exec "${TARGET}" sh -c '
     test ! -e /config/nginx/snippets/resolver.conf.sample
     test ! -e /config/nginx/snippets/static-assets.conf.sample
     test ! -e /config/nginx/obsolete.conf.sample
+    test ! -e /config/nginx/templates
+    test -f /defaults/runtime/nginx/crowdsec.conf
     cmp -s /defaults/nginx/nginx.conf /config/nginx/nginx.conf.sample
     test ! -e /config/nginx/snippets/resolver.conf
     grep -q "^resolver " /run/nginx/resolver.conf

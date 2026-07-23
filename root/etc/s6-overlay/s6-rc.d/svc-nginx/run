@@ -1,5 +1,6 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
+set -Eeuo pipefail
 
 if pgrep -f "[n]ginx:" >/dev/null; then
     echo "Zombie nginx processes detected, sending SIGTERM"
@@ -13,21 +14,4 @@ if pgrep -f "[n]ginx:" >/dev/null; then
     sleep 1
 fi
 
-# shellcheck disable=SC2317,SC2329 # Invoked indirectly by the TERM trap.
-graceful_stop() {
-    echo "Container stopping, requesting graceful nginx shutdown"
-    kill -QUIT "${nginx_pid}" 2>/dev/null || true
-}
-
-trap graceful_stop TERM
-
-/usr/sbin/nginx -e stderr &
-nginx_pid=$!
-
-# A trapped signal interrupts wait. Keep waiting while nginx drains active
-# requests, then return its real exit status to s6.
-while kill -0 "${nginx_pid}" 2>/dev/null; do
-    wait "${nginx_pid}" || true
-done
-wait "${nginx_pid}" 2>/dev/null || exit_code=$?
-exit "${exit_code:-0}"
+exec /usr/sbin/nginx -e stderr

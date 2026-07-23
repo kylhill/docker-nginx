@@ -1,30 +1,26 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
-set -e
+set -Eeuo pipefail
 
 # Keep generated bouncer credentials private to the container user.
 umask 077
-
-startup_error() {
-    echo "ERROR: $*" >&2
-    printf '1\n' > /run/s6-linux-init-container-results/exitcode
-    /run/s6/basedir/bin/halt
-    return 1
-}
 
 API_KEY="${CROWDSEC_NGINX_API_KEY:-}"
 BOUNCER_CONF=/run/crowdsec/crowdsec-nginx-bouncer.conf
 BOUNCER_CONF_TEMPLATE=/etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf.template
 NGINX_CROWDSEC_INCLUDE=/run/nginx/http.d/crowdsec.conf
-NGINX_CROWDSEC_INCLUDE_DEFAULT=/defaults/nginx/templates/crowdsec.conf
+NGINX_CROWDSEC_INCLUDE_DEFAULT=/defaults/runtime/nginx/crowdsec.conf
 
 mkdir -p /run/crowdsec /run/nginx/http.d
 rm -f "${NGINX_CROWDSEC_INCLUDE}" "${BOUNCER_CONF}"
 
 if [[ -n "${API_KEY}" || -n "${CROWDSEC_LAPI_URL:-}" || -n "${CROWDSEC_APPSEC_URL:-}" ]]; then
     if [[ -z "${API_KEY}" || -z "${CROWDSEC_LAPI_URL:-}" ]]; then
-        startup_error \
-            "CROWDSEC_NGINX_API_KEY and CROWDSEC_LAPI_URL must both be set when CrowdSec is configured."
+        echo "ERROR: CROWDSEC_NGINX_API_KEY and CROWDSEC_LAPI_URL must both be set when CrowdSec is configured." >&2
+        exit 1
+    fi
+    if [[ -e /config/nginx/http.d/crowdsec.conf ]]; then
+        echo "ERROR: Remove the obsolete /config/nginx/http.d/crowdsec.conf before enabling CrowdSec." >&2
         exit 1
     fi
 
@@ -59,7 +55,7 @@ if [[ -n "${API_KEY}" || -n "${CROWDSEC_LAPI_URL:-}" || -n "${CROWDSEC_APPSEC_UR
         "${BOUNCER_CONF_TEMPLATE}" \
         > "${BOUNCER_CONF}"
 
-    if [[ -z ${LSIO_NON_ROOT_USER} ]]; then
+    if [[ -z ${LSIO_NON_ROOT_USER:-} ]]; then
         chown abc:abc "${BOUNCER_CONF}"
     fi
     chmod 0600 "${BOUNCER_CONF}"

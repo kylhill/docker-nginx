@@ -1,16 +1,9 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
-set -e
+set -Eeuo pipefail
 
 # Protect the MaxMind license key written to the runtime filesystem.
 umask 077
-
-startup_error() {
-    echo "ERROR: $*" >&2
-    printf '1\n' > /run/s6-linux-init-container-results/exitcode
-    /run/s6/basedir/bin/halt
-    return 1
-}
 
 ACCOUNT_ID="${GEOIPUPDATE_ACCOUNT_ID:-}"
 LICENSE_KEY="${GEOIPUPDATE_LICENSE_KEY:-}"
@@ -19,8 +12,7 @@ GEOIP_CONF=/run/GeoIP.conf
 
 if [[ -n "${ACCOUNT_ID}" || -n "${LICENSE_KEY}" ]]; then
     if [[ -z "${ACCOUNT_ID}" || -z "${LICENSE_KEY}" ]]; then
-        startup_error \
-            "GEOIPUPDATE_ACCOUNT_ID and GEOIPUPDATE_LICENSE_KEY must both be set when GeoIPUpdate is configured."
+        echo "ERROR: GEOIPUPDATE_ACCOUNT_ID and GEOIPUPDATE_LICENSE_KEY must both be set when GeoIPUpdate is configured." >&2
         exit 1
     fi
 fi
@@ -41,7 +33,7 @@ EOF
         if compgen -G '/config/geoip/*.mmdb' > /dev/null; then
             echo "WARNING: geoipupdate failed, but an existing database was found. Continuing with cached database."
         else
-            startup_error "geoipupdate failed and no existing database was found."
+            echo "ERROR: geoipupdate failed and no existing database was found." >&2
             exit 1
         fi
     fi

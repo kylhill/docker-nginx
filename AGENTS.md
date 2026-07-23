@@ -25,9 +25,10 @@ This is a Docker image that packages nginx on top of the [linuxserver.io Alpine 
 
 ### `root/` overlay
 
-Everything under `root/` is copied directly onto the container filesystem at `/` by the `COPY root/ /` instruction. Two subtrees matter:
+Everything under `root/` is copied directly onto the container filesystem at `/` by the `COPY root/ /` instruction. Three subtrees matter:
 
 - **`root/defaults/nginx/`** — Shipped default nginx config. Active files are copied into `/config/nginx/` only when absent, while current defaults are refreshed on every start as adjacent `.conf.sample` files. Exact active/sample matches are removed after comparison, leaving samples only for differing persisted configs. Each shipped config has a `## Version YYYY/MM/DD` header; startup compares active files with their samples and warns when reconciliation is needed.
+- **`root/defaults/runtime/`** — Immutable internal templates used to generate ephemeral files under `/run`; these are never copied into `/config`.
 - **`root/etc/s6-overlay/s6-rc.d/`** — s6 service and init definitions.
 
 ### s6 init chain
@@ -42,7 +43,7 @@ init-nginx-end ← init-nginx-validate ← init-version-checks ← init-permissi
 svc-nginx (long-running)
 ```
 
-- `init-folders`: creates `/config/geoip`, `/config/keys`, `/config/nginx/site-confs`, and generates the persistent `/config/keys/quic_host.key` when absent
+- `init-folders`: creates `/config/geoip`, `/config/keys`, `/config/nginx/site-confs`, generates the persistent `/config/keys/quic_host.key`, and generates fallback TLS credentials when absent
 - `init-samples`: removes the previous image-managed `*.conf.sample` set and refreshes samples beside active configs for host-side comparison
 - `init-nginx`: copies missing active files from `/defaults/nginx/` without replacing user files
 - `init-resolver`: generates a missing resolver snippet from `/etc/resolv.conf`
