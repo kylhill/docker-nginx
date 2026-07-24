@@ -73,7 +73,6 @@ listen-https.conf  →  port 443 listen directives (including HTTP/2 & HTTP/3/QU
 hsts.conf          →  configurable Strict-Transport-Security header
 geoip-block.conf   →  returns 403 if $access_allowed = no
 no-robots.conf     →  X-Robots-Tag header
-security-headers.conf → security headers
 ```
 
 Use `proxy.conf` for upstream proxy locations — it includes `proxy-common.conf` and `static-assets.conf`. HTTPS upstream locations should also include `proxy-ssl-verify.conf` when their certificates chain to the system trust bundle.

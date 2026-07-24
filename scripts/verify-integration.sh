@@ -216,7 +216,6 @@ server {
     ssl_certificate /config/keys/cert.crt;
     ssl_certificate_key /config/keys/cert.key;
     include /config/nginx/snippets/hsts.conf;
-    include /config/nginx/snippets/security-headers.conf;
 
     location / {
         default_type text/plain;
