@@ -9,13 +9,14 @@ This image packages nginx on top of the linuxserver Alpine base image and is int
 
 At container start, missing nginx config paths under `/config/nginx/` are
 created as symlinks to the immutable defaults under `/defaults/nginx/`. This
-keeps existing `/config/nginx/...` include paths working while automatically
-using the defaults from the current image. A regular file at one of those paths
-is treated as an explicit user override and is never replaced.
+keeps the user-facing include paths stable while automatically selecting the
+defaults from the current image. Replacing a symlink with a regular file creates
+a persistent user override that startup never replaces.
 
 Deployments upgrading from the former copied-config layout can replace all old
-image-managed files with default symlinks in one step. This removes customizations
-made directly to a shipped path, so the command first backs up the host config:
+image-managed files with current default symlinks in one step. This removes
+customizations made directly to a shipped path, so the command first backs up
+the host config:
 
 ```bash
 docker compose stop nginx &&
@@ -37,7 +38,7 @@ persistent custom resolver, create
 
 ## Reverse Proxy Example
 
-Create a server block such as `/config/nginx/site-confs/app.subdomain.conf`:
+Create a server block such as `/config/nginx/site-confs/app.conf`:
 
 ```nginx
 server {
@@ -76,8 +77,8 @@ server {
 }
 ```
 
-The shared includes under `/config/nginx/snippets/` point to the image defaults.
-To customize one, replace its symlink with a regular file.
+Sites include shared policies through `/config/nginx/snippets/`. To customize
+one, replace its default symlink with a regular file.
 
 ### HTTPS upstreams
 
@@ -106,8 +107,8 @@ The first two policies are generally safe for reverse-proxied applications,
 but `nosniff` can expose an application that serves scripts or stylesheets with
 an incorrect MIME type. Test applications after enabling a changed policy.
 
-HSTS is isolated in `/config/nginx/snippets/hsts.conf`. Replace that default
-symlink with a regular file and comment out its `add_header` directive for
+HSTS is isolated in `/config/nginx/snippets/hsts.conf`. Replace its default
+symlink with a regular file and comment out the `add_header` directive for
 internal names, self-signed certificates, or any deployment where clients may
 need to return to HTTP. Browsers retain HSTS for the advertised lifetime, so
 disabling it server-side does not immediately clear previously cached policy.
@@ -133,9 +134,11 @@ otherwise forge their source address and bypass address-based controls.
 
 ## Common Paths
 
-- `/config/nginx/nginx.conf`: main nginx config; symlinked to the image default unless overridden
+- `/defaults/nginx/`: immutable image defaults
+- `/config/nginx/nginx.conf`: main config, symlinked to the default unless overridden
 - `/config/nginx/site-confs/`: place virtual hosts and reverse proxy server blocks here
-- `/config/nginx/snippets/`: reusable defaults, exposed as symlinks unless overridden
+- `/config/nginx/http.d/`: default symlinks plus custom additions or overrides
+- `/config/nginx/snippets/`: default symlinks plus custom snippets or overrides
 - `/config/keys/`: TLS certificates and private keys
 - `/config/geoip/`: GeoIP database download location
 
@@ -188,8 +191,8 @@ globally.
 The static asset cache defaults to a 1 GiB maximum under `/tmp`. Replace
 `/config/nginx/http.d/proxy-cache.conf` with an adjusted regular file to change
 `max_size` or disable the cache. Gzip, Brotli, and Zstandard are independently
-controlled by symlinks under `/config/nginx/http.d/`; replace one with a regular
-config to customize that algorithm.
+controlled by their symlinks under `/config/nginx/http.d/`; replace one with a
+regular config to customize that algorithm.
 
 Container limits are deployment policy rather than image defaults. For
 Compose, start with measured limits and adjust from observed peak usage:
@@ -224,10 +227,10 @@ diff and run the full verification suite before publishing.
 
 - GeoIPUpdate credentials are validated during initialization. Missing
   configured databases are downloaded synchronously on first use so nginx
-  configurations can safely reference them. Once bootstrapped, a supervised
-  updater refreshes databases immediately and every 24 hours without putting
-  routine container restarts on the network path. Refresh failures retain the
-  existing database and are retried at the next interval.
+  configurations can safely reference them. That bootstrap counts as the
+  initial refresh; otherwise the supervised updater refreshes immediately, then
+  every 24 hours. Refresh failures retain the existing database and are retried
+  at the next interval.
 - CrowdSec writes its generated nginx include to `/run/nginx/http.d/crowdsec.conf`.
 - `GEOIPUPDATE_ACCOUNT_ID`, `GEOIPUPDATE_LICENSE_KEY`, and
   `CROWDSEC_NGINX_API_KEY` accept direct values or LinuxServer's standard
@@ -235,7 +238,7 @@ diff and run the full verification suite before publishing.
 - CrowdSec requires both `CROWDSEC_NGINX_API_KEY` and `CROWDSEC_LAPI_URL` when
   any CrowdSec setting is present. GeoIPUpdate likewise requires both its
   account ID and license key. Partial feature configuration stops startup.
-- Enabled site files must end in `.subdomain.conf`; startup warns about other files in `/config/nginx/site-confs/` because nginx ignores them.
+- Enabled site files must end in `.conf`.
 - FastCGI and PHP are unsupported. The image does not ship PHP-FPM or the
   LinuxServer FastCGI parameter customizations; use a separate application
   container behind HTTP or HTTPS instead.

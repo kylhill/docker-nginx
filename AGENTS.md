@@ -44,34 +44,25 @@ init-docker-nginx-bootstrap → init-docker-nginx-config
 ```
 
 - `init-docker-nginx-bootstrap`: creates `/config/geoip`, `/config/keys`, `/config/nginx/site-confs`, generates the persistent `/config/keys/quic_host.key`, and generates fallback TLS credentials when absent
-- `init-docker-nginx-config`: symlinks missing config paths to immutable files under `/defaults/nginx/`, preserves regular-file overrides, and reports ignored site-conf filenames
+- `init-docker-nginx-config`: symlinks missing config paths to immutable files under `/defaults/nginx/` while preserving regular-file overrides
 - `init-docker-nginx-resolver`: generates a missing resolver snippet from `/etc/resolv.conf`
 - `init-docker-nginx-geoipupdate`: validates GeoIPUpdate credentials, writes its runtime configuration, and bootstraps any missing configured database
 - `init-docker-nginx-crowdsec`: generates the enabled CrowdSec runtime and nginx configuration
 - `init-docker-nginx-permissions`: makes nginx configuration group-writable and sets root-mode ownership of `/config/**` to `abc:abc`
 - `init-docker-nginx-validate`: validates the completed configuration with `nginx -t`
-- `svc-docker-nginx`: kills any zombie nginx processes then execs `nginx -e stderr`
-- `svc-docker-nginx-geoipupdate`: refreshes configured GeoIP databases immediately and every 24 hours without blocking nginx startup
+- `svc-docker-nginx`: execs nginx in the foreground with its PID under `/run`
+- `svc-docker-nginx-geoipupdate`: skips a redundant refresh after synchronous bootstrap; otherwise refreshes immediately and then every 24 hours
 
 ### nginx config loading
 
-The entrypoint is `/etc/nginx/nginx.conf`, which simply includes `/config/nginx/nginx.conf`. That file includes:
+The entrypoint is `/etc/nginx/nginx.conf`, which includes
+`/config/nginx/nginx.conf`. The default main config includes:
 
-- `/config/nginx/http.d/*.conf` — http-context config blocks (compression, caching, etc.)
-- `/config/nginx/site-confs/*.subdomain.conf` — virtual host/reverse proxy server blocks (**must match `*.subdomain.conf`**)
+- `/run/nginx/http.d/*.conf` — generated runtime http-context config blocks
+- `/config/nginx/http.d/*.conf` — default symlinks, overrides, and custom http-context config blocks
+- `/config/nginx/site-confs/*.conf` — virtual host/reverse proxy server blocks
 
 ## Key Conventions
-
-### Shipped config version headers
-
-Every shipped nginx `.conf` under `root/defaults/nginx/` must begin with a
-`## Version YYYY/MM/DD` header. Whenever a shipped config is changed, update
-that file's version date as part of the same change. The header identifies the
-revision when inspecting an image default or an explicit user override.
-
-Use the date of the change. If a version with that date has already been
-published, advance the header again before publishing; never ship different
-config contents under a previously published version string.
 
 ### Snippet composition for server blocks
 
@@ -89,7 +80,8 @@ Use `proxy.conf` for upstream proxy locations — it includes `proxy-common.conf
 
 ### Site conf naming requirement
 
-Files placed in `/config/nginx/site-confs/` **must be named `*.subdomain.conf`** to be picked up by the nginx include glob. Startup warns when other non-sample files are silently ignored by nginx.
+Files placed in `/config/nginx/site-confs/` must end in `.conf` to be picked up
+by the nginx include glob.
 
 ### GeoIP environment variables
 
@@ -112,7 +104,10 @@ hardening profile.
 
 ### Dockerfile
 
-`Dockerfile` is used for both local and CI builds. CI builds a multi-platform image for amd64 and arm64 via buildx, and the Dockerfile cleans up default `/var/www` content for all platforms.
+`Dockerfile` is used for both local and CI builds. CI builds a multi-platform
+image for amd64 and arm64 via buildx; architecture-specific downloads select
+their artifact and checksum with BuildKit's `TARGETARCH`. The Dockerfile cleans
+up default `/var/www` content for all platforms.
 
 ### CI / Publishing
 

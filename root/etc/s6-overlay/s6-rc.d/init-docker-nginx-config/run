@@ -13,18 +13,3 @@ while IFS= read -r -d '' source; do
         ln -s "${source}" "${destination}"
     fi
 done < <(find /defaults/nginx -type f -print0)
-
-ignored_site_configs=""
-while IFS= read -r -d '' site_config; do
-    ignored_site_configs+="  ${site_config}\n"
-done < <(find /config/nginx/site-confs \
-    -type f \
-    ! -name '*.subdomain.conf' \
-    ! -name '*.conf.sample' \
-    -print0)
-
-if [ -n "${ignored_site_configs}" ]; then
-    echo "**** The following site configs are ignored because their names do not end in .subdomain.conf: ****"
-    echo -e "${ignored_site_configs%\\n}"
-    echo "**** Rename each enabled site config to match *.subdomain.conf. ****"
-fi

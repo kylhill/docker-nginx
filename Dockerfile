@@ -4,6 +4,8 @@
 ARG BASE_IMAGE=ghcr.io/linuxserver/baseimage-alpine:3.24
 FROM ${BASE_IMAGE}
 
+ARG TARGETARCH
+
 LABEL maintainer="Kyle Hill" \
       org.opencontainers.image.title="docker-nginx" \
       org.opencontainers.image.description="nginx reverse proxy on linuxserver.io Alpine base image" \
@@ -45,18 +47,18 @@ ARG GEOIPUPDATE_VERSION=8.0.0
 ARG GEOIPUPDATE_AMD64_SHA256=941eb4dd8c1eafb6ee1d56ccd5f4c62ffbdaca5f65a9f9cadc4008c8d805f2a2
 ARG GEOIPUPDATE_ARM64_SHA256=76cedc3bad8b5f02a3ea42ac84c57d318a758377a07806f7a13189a382f16308
 RUN set -eux; \
-    # detect architecture for GitHub release
-    case "$(apk --print-arch)" in \
-      x86_64) RELEASE_ARCH="amd64"; GEOIPUPDATE_SHA256="$GEOIPUPDATE_AMD64_SHA256";; \
-      aarch64) RELEASE_ARCH="arm64"; GEOIPUPDATE_SHA256="$GEOIPUPDATE_ARM64_SHA256";; \
+    # select the checksum for BuildKit's target architecture
+    case "$TARGETARCH" in \
+      amd64) GEOIPUPDATE_SHA256="$GEOIPUPDATE_AMD64_SHA256";; \
+      arm64) GEOIPUPDATE_SHA256="$GEOIPUPDATE_ARM64_SHA256";; \
       *) echo "Unsupported architecture"; exit 1;; \
     esac; \
     GEOIPUPDATE_ARCHIVE="/tmp/geoipupdate.tar.gz"; \
-    GEOIPUPDATE_DIR="/tmp/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${RELEASE_ARCH}"; \
+    GEOIPUPDATE_DIR="/tmp/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${TARGETARCH}"; \
     \
     # download and verify the tar.gz for the architecture
     curl -fsSL -o "$GEOIPUPDATE_ARCHIVE" \
-      "https://github.com/maxmind/geoipupdate/releases/download/v${GEOIPUPDATE_VERSION}/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${RELEASE_ARCH}.tar.gz"; \
+      "https://github.com/maxmind/geoipupdate/releases/download/v${GEOIPUPDATE_VERSION}/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${TARGETARCH}.tar.gz"; \
     echo "${GEOIPUPDATE_SHA256}  ${GEOIPUPDATE_ARCHIVE}" \
       > "${GEOIPUPDATE_ARCHIVE}.sha256"; \
     sha256sum -c "${GEOIPUPDATE_ARCHIVE}.sha256"; \
@@ -107,11 +109,6 @@ RUN set -eux; \
     # install ban HTML template only (no captcha)
     install -Dm 0644 "$CROWDSEC_DIR/lua-mod/templates/ban.html" \
       /var/lib/crowdsec/lua/templates/ban.html; \
-    \
-    # install bouncer config template adjusted by the namespaced CrowdSec s6
-    # service at startup
-    install -Dm 0644 "$CROWDSEC_DIR/lua-mod/config_example.conf" \
-        /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf.template; \
     \
     # cleanup
     rm -f "$CROWDSEC_ARCHIVE" "${CROWDSEC_ARCHIVE}.sha256" \

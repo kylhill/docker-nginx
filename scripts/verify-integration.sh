@@ -121,8 +121,7 @@ install_fixtures() {
         --entrypoint sh \
         "${IMAGE}" \
         -c 'mkdir -p /config/nginx/site-confs
-            cp /fixtures/integration.subdomain.conf /config/nginx/site-confs/
-            : > /config/nginx/site-confs/ignored.conf
+            cp /fixtures/integration.conf /config/nginx/site-confs/
             rm -f /config/nginx/http.d/geoip2.conf
             cp /fixtures/geoip2.conf /config/nginx/http.d/
             cp /config/nginx/nginx.conf /config/nginx/nginx.conf.override
@@ -188,7 +187,7 @@ map \$remote_addr \$access_allowed {
 }
 EOF
 
-cat > "${TEST_ROOT}/fixtures/integration.subdomain.conf" <<'EOF'
+cat > "${TEST_ROOT}/fixtures/integration.conf" <<'EOF'
 server {
     listen 8080;
     listen unix:/run/crowdsec-integration.sock;
@@ -296,8 +295,9 @@ docker run -d \
 wait_running "${TARGET}"
 wait_healthy "${TARGET}"
 wait_for_log "${LAPI}" 'user_agent="crowdsec-nginx-bouncer/v1.1.6"'
-wait_for_log "${TARGET}" 'site configs are ignored because their names do not end in .subdomain.conf'
 wait_for_log "${TARGET}" 'GeoIPUpdate completed successfully.'
+[ "$(docker logs "${TARGET}" 2>&1 | grep -Fc 'GeoIPUpdate completed successfully.')" = 1 ] ||
+    fail "GeoIPUpdate ran more than once during initial database bootstrap"
 
 docker exec "${TARGET}" sh -c '
     test ! -e /config/nginx/nginx.conf.sample
@@ -337,6 +337,9 @@ docker exec "${TARGET}" sh -c '
     grep -q "^LicenseKey file-license$" /run/GeoIP.conf
     grep -q "^EditionIDs GeoLite2-Country$" /run/GeoIP.conf
     grep -q "^API_KEY=test-api-key$" /run/crowdsec/crowdsec-nginx-bouncer.conf
+    grep -q "^MODE=stream$" /run/crowdsec/crowdsec-nginx-bouncer.conf
+    grep -q "^REQUEST_TIMEOUT=500$" /run/crowdsec/crowdsec-nginx-bouncer.conf
+    grep -q "^CAPTCHA_PROVIDER=$" /run/crowdsec/crowdsec-nginx-bouncer.conf
     test -f /run/nginx/http.d/crowdsec.conf
     test ! -e /etc/GeoIP.conf
     test -f /config/geoip/GeoLite2-Country.mmdb

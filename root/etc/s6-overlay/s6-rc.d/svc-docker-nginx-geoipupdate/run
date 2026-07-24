@@ -3,6 +3,7 @@
 set -Eeuo pipefail
 
 readonly UPDATE_INTERVAL_SECONDS=86400
+readonly BOOTSTRAP_MARKER=/run/geoipupdate-bootstrapped
 sleep_pid=
 
 stop() {
@@ -14,11 +15,15 @@ stop() {
 }
 trap stop TERM INT QUIT
 
-while true; do
+if [[ ! -e "${BOOTSTRAP_MARKER}" ]]; then
     /usr/local/bin/update-geoip-database || true
+fi
 
+while true; do
     sleep "${UPDATE_INTERVAL_SECONDS}" &
     sleep_pid=$!
     wait "${sleep_pid}" || exit 0
     sleep_pid=
+
+    /usr/local/bin/update-geoip-database || true
 done

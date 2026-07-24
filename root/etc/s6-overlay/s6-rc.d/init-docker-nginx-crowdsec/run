@@ -7,7 +7,6 @@ umask 077
 
 API_KEY="${CROWDSEC_NGINX_API_KEY:-}"
 BOUNCER_CONF=/run/crowdsec/crowdsec-nginx-bouncer.conf
-BOUNCER_CONF_TEMPLATE=/etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf.template
 NGINX_CROWDSEC_INCLUDE=/run/nginx/http.d/crowdsec.conf
 NGINX_CROWDSEC_INCLUDE_DEFAULT=/defaults/runtime/nginx/crowdsec.conf
 
@@ -26,34 +25,40 @@ if [[ -n "${API_KEY}" || -n "${CROWDSEC_LAPI_URL:-}" || -n "${CROWDSEC_APPSEC_UR
 
     echo "Configuring CrowdSec nginx bouncer..."
 
-    # The nginx include is static. The bouncer config needs runtime secrets.
-    awk \
-        -v api_url="${CROWDSEC_LAPI_URL}" \
-        -v api_key="${API_KEY}" \
-        -v appsec_url="${CROWDSEC_APPSEC_URL:-}" \
-        'BEGIN { appsec_written = 0 }
-         /^API_URL=/ { print "API_URL=" api_url; next }
-         /^API_KEY=/ { print "API_KEY=" api_key; next }
-         /^CAPTCHA_PROVIDER=/ { print "CAPTCHA_PROVIDER="; next }
-         /^MODE=/ { print "MODE=stream"; next }
-         /^REQUEST_TIMEOUT=/ { print "REQUEST_TIMEOUT=500"; next }
-         /^APPSEC_URL=/ {
-             appsec_written = 1
-             if (appsec_url != "") {
-                 print "APPSEC_URL=" appsec_url
-             } else {
-                 print
-             }
-             next
-         }
-         { print }
-         END {
-             if (appsec_url != "" && appsec_written == 0) {
-                 print "APPSEC_URL=" appsec_url
-             }
-         }' \
-        "${BOUNCER_CONF_TEMPLATE}" \
-        > "${BOUNCER_CONF}"
+    # Generate the exact supported configuration rather than rewriting the
+    # formatting and defaults of an upstream example file.
+    cat > "${BOUNCER_CONF}" <<EOF
+ENABLED=true
+API_URL=${CROWDSEC_LAPI_URL}
+API_KEY=${API_KEY}
+USE_TLS_AUTH=false
+TLS_CLIENT_CERT=
+TLS_CLIENT_KEY=
+CACHE_EXPIRATION=1
+BOUNCING_ON_TYPE=all
+FALLBACK_REMEDIATION=ban
+REQUEST_TIMEOUT=500
+UPDATE_FREQUENCY=10
+ENABLE_INTERNAL=false
+MODE=stream
+EXCLUDE_LOCATION=
+BAN_TEMPLATE_PATH=/var/lib/crowdsec/lua/templates/ban.html
+REDIRECT_LOCATION=
+RET_CODE=
+CAPTCHA_PROVIDER=
+SECRET_KEY=
+SITE_KEY=
+CAPTCHA_TEMPLATE_PATH=
+CAPTCHA_EXPIRATION=3600
+APPSEC_URL=${CROWDSEC_APPSEC_URL:-}
+APPSEC_FAILURE_ACTION=passthrough
+APPSEC_CONNECT_TIMEOUT=
+APPSEC_SEND_TIMEOUT=
+APPSEC_PROCESS_TIMEOUT=
+ALWAYS_SEND_TO_APPSEC=false
+APPSEC_DROP_UNREADABLE_BODY=false
+SSL_VERIFY=true
+EOF
 
     if [[ -z ${LSIO_NON_ROOT_USER:-} ]]; then
         chown abc:abc "${BOUNCER_CONF}"
