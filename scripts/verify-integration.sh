@@ -289,6 +289,7 @@ wait_running "${TARGET}"
 wait_healthy "${TARGET}"
 wait_for_log "${LAPI}" 'user_agent="crowdsec-nginx-bouncer/v1.1.6"'
 wait_for_log "${TARGET}" 'site configs are ignored because their names do not end in .subdomain.conf'
+wait_for_log "${TARGET}" 'GeoIPUpdate completed successfully.'
 
 docker exec "${TARGET}" sh -c '
     test -f /config/nginx/nginx.conf.sample
@@ -329,6 +330,7 @@ docker exec "${TARGET}" sh -c '
     grep -q "^API_KEY=test-api-key$" /run/crowdsec/crowdsec-nginx-bouncer.conf
     test -f /run/nginx/http.d/crowdsec.conf
     test ! -e /etc/GeoIP.conf
+    test -f /config/geoip/GeoLite2-Country.mmdb
     test ! -e /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf
     ! grep -R -q "test-api-key" /config
 '
@@ -447,7 +449,7 @@ test_geo_failure() {
     bootstrap_config "${volume}"
     if [ "${scenario}" = cached ]; then
         docker run --rm -v "${volume}:/config" "${HELPER_IMAGE}" \
-            sh -c 'mkdir -p /config/geoip && : > /config/geoip/cached.mmdb'
+            sh -c 'mkdir -p /config/geoip && : > /config/geoip/GeoLite2-Country.mmdb'
     fi
 
     CONTAINERS+=("${container}")
@@ -464,21 +466,22 @@ test_geo_failure() {
 
     if [ "${scenario}" = cached ]; then
         wait_running "${container}"
+        wait_healthy "${container}"
         wait_for_log "${container}" "${expected_log}"
         docker stop -t 10 "${container}" >/dev/null
     else
         wait_stopped "${container}"
         wait_for_log "${container}" "${expected_log}"
         [ "$(docker inspect -f '{{.State.ExitCode}}' "${container}")" -ne 0 ] ||
-            fail "${container} exited successfully after GeoIPUpdate failed without a cache"
+            fail "${container} exited successfully without its initial GeoIP database"
     fi
 }
 
 echo "Checking GeoIPUpdate failure paths..."
 test_geo_failure missing \
-    'ERROR: geoipupdate failed and no existing database was found'
+    'ERROR: Unable to bootstrap the configured GeoIP database.'
 test_geo_failure cached \
-    'geoipupdate failed, but an existing database was found'
+    'WARNING: GeoIPUpdate failed; retaining the existing database.'
 
 test_init_failure() {
     local scenario="$1"
@@ -594,11 +597,15 @@ docker run -d \
     --tmpfs /tmp:uid=1000,gid=1000 \
     -e TZ=Etc/UTC \
     -e UMASK=002 \
+    -e GEOIPUPDATE_ACCOUNT_ID=file-account \
+    -e GEOIPUPDATE_LICENSE_KEY=file-license \
     -v "${NONROOT_VOLUME}:/config" \
+    -v "${TEST_ROOT}/geoip-success:/usr/local/bin/geoipupdate:ro" \
     "${IMAGE}" >/dev/null
 wait_running "${NONROOT_TARGET}"
 wait_healthy "${NONROOT_TARGET}"
 wait_for_log "${NONROOT_TARGET}" 'nginx: configuration file /etc/nginx/nginx.conf test is successful'
+wait_for_log "${NONROOT_TARGET}" 'GeoIPUpdate completed successfully.'
 [ "$(docker inspect -f '{{.Config.User}}' "${NONROOT_TARGET}")" = 1000:1000 ] ||
     fail "non-root user was not applied"
 [ "$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' "${NONROOT_TARGET}")" = true ] ||
@@ -608,6 +615,7 @@ docker inspect -f '{{json .HostConfig.CapDrop}}' "${NONROOT_TARGET}" | grep -Fqi
 docker inspect -f '{{json .HostConfig.SecurityOpt}}' "${NONROOT_TARGET}" | grep -Fqi 'no-new-privileges' ||
     fail "no-new-privileges was not applied"
 docker exec "${NONROOT_TARGET}" nginx -t -e stderr
+docker exec "${NONROOT_TARGET}" test -f /config/geoip/GeoLite2-Country.mmdb
 docker stop -t 10 "${NONROOT_TARGET}" >/dev/null
 
 echo "Integration verification passed."

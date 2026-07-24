@@ -1,0 +1,24 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+set -Eeuo pipefail
+
+readonly UPDATE_INTERVAL_SECONDS=86400
+sleep_pid=
+
+stop() {
+    if [[ -n "${sleep_pid}" ]]; then
+        kill "${sleep_pid}" 2>/dev/null || true
+        wait "${sleep_pid}" 2>/dev/null || true
+    fi
+    exit 0
+}
+trap stop TERM INT QUIT
+
+while true; do
+    /usr/local/bin/update-geoip-database || true
+
+    sleep "${UPDATE_INTERVAL_SECONDS}" &
+    sleep_pid=$!
+    wait "${sleep_pid}" || exit 0
+    sleep_pid=
+done

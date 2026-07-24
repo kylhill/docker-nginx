@@ -28,16 +28,25 @@ EditionIDs ${EDITION_IDS}
 EOF
     chmod 0600 "${GEOIP_CONF}"
 
-    echo "Running geoipupdate..."
-    if ! /usr/local/bin/geoipupdate -f "${GEOIP_CONF}" -d /config/geoip; then
-        if compgen -G '/config/geoip/*.mmdb' > /dev/null; then
-            echo "WARNING: geoipupdate failed, but an existing database was found. Continuing with cached database."
-        else
-            echo "ERROR: geoipupdate failed and no existing database was found." >&2
+    missing_database=false
+    read -r -a edition_ids <<< "${EDITION_IDS}"
+    for edition_id in "${edition_ids[@]}"; do
+        if [[ ! -f "/config/geoip/${edition_id}.mmdb" ]]; then
+            missing_database=true
+            break
+        fi
+    done
+
+    if [[ "${missing_database}" == true ]]; then
+        echo "Bootstrapping missing GeoIP database..."
+        if ! /usr/local/bin/update-geoip-database; then
+            echo "ERROR: Unable to bootstrap the configured GeoIP database." >&2
             exit 1
         fi
     fi
+
+    echo "GeoIPUpdate configured; the supervised updater will refresh databases."
 else
     rm -f "${GEOIP_CONF}"
-    echo "GeoIPUpdate credentials not set, skipping update."
+    echo "GeoIPUpdate credentials not set; periodic updates are disabled."
 fi

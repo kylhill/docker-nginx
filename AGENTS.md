@@ -39,19 +39,22 @@ Services run in dependency order:
 init-docker-nginx-bootstrap → init-docker-nginx-samples → init-docker-nginx-config
 → init-docker-nginx-resolver → init-docker-nginx-geoipupdate → init-docker-nginx-crowdsec
 → init-docker-nginx-permissions → init-docker-nginx-version-checks
-→ init-docker-nginx-validate → init-docker-nginx-end → svc-docker-nginx
+→ init-docker-nginx-validate → init-docker-nginx-end
+                                              ├→ svc-docker-nginx
+                                              └→ svc-docker-nginx-geoipupdate
 ```
 
 - `init-docker-nginx-bootstrap`: creates `/config/geoip`, `/config/keys`, `/config/nginx/site-confs`, generates the persistent `/config/keys/quic_host.key`, and generates fallback TLS credentials when absent
 - `init-docker-nginx-samples`: removes the previous image-managed `*.conf.sample` set and refreshes samples beside active configs for host-side comparison
 - `init-docker-nginx-config`: copies missing active files from `/defaults/nginx/` without replacing user files
 - `init-docker-nginx-resolver`: generates a missing resolver snippet from `/etc/resolv.conf`
-- `init-docker-nginx-geoipupdate`: downloads GeoIP databases when credentials are configured
+- `init-docker-nginx-geoipupdate`: validates GeoIPUpdate credentials, writes its runtime configuration, and bootstraps any missing configured database
 - `init-docker-nginx-crowdsec`: generates the enabled CrowdSec runtime and nginx configuration
 - `init-docker-nginx-permissions`: makes nginx configuration group-writable and sets root-mode ownership of `/config/**` to `abc:abc`
 - `init-docker-nginx-version-checks`: removes exact active/sample matches, warns about remaining version mismatches, and reports ignored site-conf filenames
 - `init-docker-nginx-validate`: validates the completed configuration with `nginx -t`
 - `svc-docker-nginx`: kills any zombie nginx processes then execs `nginx -e stderr`
+- `svc-docker-nginx-geoipupdate`: refreshes configured GeoIP databases immediately and every 24 hours without blocking nginx startup
 
 ### nginx config loading
 

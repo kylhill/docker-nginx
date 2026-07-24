@@ -208,7 +208,12 @@ diff and run the full verification suite before publishing.
 
 ## Notes
 
-- `geoipupdate` runs during the s6 initialization chain when `GEOIPUPDATE_ACCOUNT_ID` and `GEOIPUPDATE_LICENSE_KEY` are set.
+- GeoIPUpdate credentials are validated during initialization. Missing
+  configured databases are downloaded synchronously on first use so nginx
+  configurations can safely reference them. Once bootstrapped, a supervised
+  updater refreshes databases immediately and every 24 hours without putting
+  routine container restarts on the network path. Refresh failures retain the
+  existing database and are retried at the next interval.
 - CrowdSec writes its generated nginx include to `/run/nginx/http.d/crowdsec.conf`.
 - `GEOIPUPDATE_ACCOUNT_ID`, `GEOIPUPDATE_LICENSE_KEY`, and
   `CROWDSEC_NGINX_API_KEY` accept direct values or LinuxServer's standard

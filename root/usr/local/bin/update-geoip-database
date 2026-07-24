@@ -1,0 +1,24 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+set -Eeuo pipefail
+
+readonly GEOIP_CONF=/run/GeoIP.conf
+readonly DATABASE_DIR=/config/geoip
+
+if [[ ! -s "${GEOIP_CONF}" ]]; then
+    echo "GeoIPUpdate config not found, skipping update."
+    exit 0
+fi
+
+echo "Running GeoIPUpdate..."
+if /usr/local/bin/geoipupdate -f "${GEOIP_CONF}" -d "${DATABASE_DIR}"; then
+    echo "GeoIPUpdate completed successfully."
+    exit 0
+fi
+
+if compgen -G "${DATABASE_DIR}/*.mmdb" > /dev/null; then
+    echo "WARNING: GeoIPUpdate failed; retaining the existing database." >&2
+else
+    echo "WARNING: GeoIPUpdate failed; no GeoIP database is currently available." >&2
+fi
+exit 1
