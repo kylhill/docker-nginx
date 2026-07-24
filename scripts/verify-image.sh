@@ -93,6 +93,7 @@ http {
     init_by_lua_block {
         require "cjson"
         require "resty.http"
+        require "resty.openssl.x509.chain"
         require "crowdsec"
     }
 }

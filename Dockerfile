@@ -25,6 +25,7 @@ RUN set -eux; \
   apk add --no-cache --no-progress \
     curl \
     lua-resty-http \
+    lua-resty-openssl \
     lua5.1-cjson \
     nginx \
     nginx-mod-http-brotli \
