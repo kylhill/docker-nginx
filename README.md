@@ -7,16 +7,29 @@ Inspired by https://github.com/nginxinc/docker-nginx/blob/master/stable/alpine/D
 
 This image packages nginx on top of the linuxserver Alpine base image and is intended to be used as a reverse proxy for self-hosted services.
 
-At container start, the default nginx config tree from `/defaults/nginx/` is
-copied into `/config/nginx/` only when active files do not already exist. The
-current shipped version of every config is refreshed alongside the active file
-as `<name>.conf.sample`. Exact active/sample matches are then removed, so a
-sample remains only when the persisted active config differs from the image
-default. Shipped configs carry dated `## Version` headers; when an active
-config's date differs from its sample, startup prints a reconciliation warning
-and leaves the active file unchanged. Compare the two files in the host-mounted
-`/config` directory and apply changes manually. Remaining `.conf.sample` files
-are image-managed and refreshed on every startup.
+At container start, missing nginx config paths under `/config/nginx/` are
+created as symlinks to the immutable defaults under `/defaults/nginx/`. This
+keeps existing `/config/nginx/...` include paths working while automatically
+using the defaults from the current image. A regular file at one of those paths
+is treated as an explicit user override and is never replaced.
+
+Deployments upgrading from the former copied-config layout can replace all old
+image-managed files with default symlinks in one step. This removes customizations
+made directly to a shipped path, so the command first backs up the host config:
+
+```bash
+docker compose stop nginx &&
+cp -a ./config ./config.before-immutable-defaults &&
+find ./config/nginx -type f -name '*.conf.sample' -delete &&
+rm -f \
+  ./config/nginx/nginx.conf \
+  ./config/nginx/http.d/{brotli,cache-file-descriptors,default,early-hints,geoip2,gzip,healthcheck,proxy-cache,zstd}.conf \
+  ./config/nginx/snippets/{drop-untrusted-auth-headers,geoip-block,hsts,listen-https,no-robots,proxy-common,proxy-no-cache,proxy-ssl-verify,proxy-stream,proxy-upload,proxy-websocket,proxy,security-headers,server-base,skip-crowdsec,static-assets}.conf &&
+docker compose up -d nginx
+```
+
+User-created files whose paths do not collide with a shipped default, including
+site configs and `resolver-override.conf`, are retained.
 The active resolver snippet is regenerated at `/run/nginx/resolver.conf` from
 the nameservers in the container's `/etc/resolv.conf` on every start. To use a
 persistent custom resolver, create
@@ -48,8 +61,8 @@ The catch-all server owns the `reuseport` socket option once for each IPv4 and
 IPv6 HTTPS and QUIC socket. Do not repeat `reuseport` in individual virtual
 hosts.
 `quic_gso` is enabled by default and requires Linux `UDP_SEGMENT` support from
-the deployment host and network interface. Set it to `off` in
-`/config/nginx/nginx.conf` on an environment that does not provide that feature.
+the deployment host and network interface. To change it, replace the
+`/config/nginx/nginx.conf` symlink with a regular copy and set it to `off`.
 
 If you also want plain HTTP to redirect to HTTPS, add a second server block such as `/config/nginx/http.d/redirect-http.conf`:
 
@@ -63,7 +76,8 @@ server {
 }
 ```
 
-Adjust or remove those shared includes in `/config/nginx/snippets/` to fit your environment.
+The shared includes under `/config/nginx/snippets/` point to the image defaults.
+To customize one, replace its symlink with a regular file.
 
 ### HTTPS upstreams
 
@@ -92,11 +106,11 @@ The first two policies are generally safe for reverse-proxied applications,
 but `nosniff` can expose an application that serves scripts or stylesheets with
 an incorrect MIME type. Test applications after enabling a changed policy.
 
-HSTS is isolated in `/config/nginx/snippets/hsts.conf`. Comment out its
-`add_header` directive for internal names, self-signed certificates, or any
-deployment where clients may need to return to HTTP. Browsers retain HSTS for
-the advertised lifetime, so disabling it server-side does not immediately
-clear previously cached policy.
+HSTS is isolated in `/config/nginx/snippets/hsts.conf`. Replace that default
+symlink with a regular file and comment out its `add_header` directive for
+internal names, self-signed certificates, or any deployment where clients may
+need to return to HTTP. Browsers retain HSTS for the advertised lifetime, so
+disabling it server-side does not immediately clear previously cached policy.
 
 nginx normally inherits parent-level `add_header` directives only when the
 child context defines none. The shipped security policy uses
@@ -119,9 +133,9 @@ otherwise forge their source address and bypass address-based controls.
 
 ## Common Paths
 
-- `/config/nginx/nginx.conf`: main nginx entrypoint used by the container
+- `/config/nginx/nginx.conf`: main nginx config; symlinked to the image default unless overridden
 - `/config/nginx/site-confs/`: place virtual hosts and reverse proxy server blocks here
-- `/config/nginx/snippets/`: reusable shared config fragments
+- `/config/nginx/snippets/`: reusable defaults, exposed as symlinks unless overridden
 - `/config/keys/`: TLS certificates and private keys
 - `/config/geoip/`: GeoIP database download location
 
@@ -160,7 +174,7 @@ capability).
 The default proxy response buffers total 1 MiB per active buffered request
 (`16 64k`). This is intentionally larger than LinuxServer SWAG's `32 4k`
 default to reduce temporary-file writes for larger homelab assets. Those
-buffers consume memory per concurrent request, so reduce them in
+buffers consume memory per concurrent request, so replace and adjust
 `snippets/proxy-common.conf` on busy or memory-constrained deployments. The
 separate client request-body buffer is 128 KiB; upload locations should use
 `proxy-upload.conf`, which disables request buffering.
@@ -171,11 +185,11 @@ WebSockets use explicitly scoped longer-timeout snippets. Use a shorter custom
 snippet for latency-sensitive APIs rather than changing streaming behavior
 globally.
 
-The static asset cache defaults to a 1 GiB maximum under `/tmp`. Change
-`max_size` or disable the cache in `/config/nginx/http.d/proxy-cache.conf`.
-Gzip, Brotli, and Zstandard are independently controlled by their files under
-`/config/nginx/http.d/`; set an algorithm to `off` or remove its active config
-to disable it.
+The static asset cache defaults to a 1 GiB maximum under `/tmp`. Replace
+`/config/nginx/http.d/proxy-cache.conf` with an adjusted regular file to change
+`max_size` or disable the cache. Gzip, Brotli, and Zstandard are independently
+controlled by symlinks under `/config/nginx/http.d/`; replace one with a regular
+config to customize that algorithm.
 
 Container limits are deployment policy rather than image defaults. For
 Compose, start with measured limits and adjust from observed peak usage:

@@ -27,7 +27,7 @@ This is a Docker image that packages nginx on top of the [linuxserver.io Alpine 
 
 Everything under `root/` is copied directly onto the container filesystem at `/` by the `COPY root/ /` instruction. Three subtrees matter:
 
-- **`root/defaults/nginx/`** — Shipped default nginx config. Active files are copied into `/config/nginx/` only when absent, while current defaults are refreshed on every start as adjacent `.conf.sample` files. Exact active/sample matches are removed after comparison, leaving samples only for differing persisted configs. Each shipped config has a `## Version YYYY/MM/DD` header; startup compares active files with their samples and warns when reconciliation is needed.
+- **`root/defaults/nginx/`** — Immutable shipped nginx config. Missing paths under `/config/nginx/` are created as symlinks to these defaults, while regular files at the same paths are preserved as explicit user overrides.
 - **`root/defaults/runtime/`** — Immutable internal templates used to generate ephemeral files under `/run`; these are never copied into `/config`.
 - **`root/etc/s6-overlay/s6-rc.d/`** — s6 service and init definitions.
 
@@ -36,22 +36,19 @@ Everything under `root/` is copied directly onto the container filesystem at `/`
 Services run in dependency order:
 
 ```
-init-docker-nginx-bootstrap → init-docker-nginx-samples → init-docker-nginx-config
+init-docker-nginx-bootstrap → init-docker-nginx-config
 → init-docker-nginx-resolver → init-docker-nginx-geoipupdate → init-docker-nginx-crowdsec
-→ init-docker-nginx-permissions → init-docker-nginx-version-checks
-→ init-docker-nginx-validate → init-docker-nginx-end
+→ init-docker-nginx-permissions → init-docker-nginx-validate → init-docker-nginx-end
                                               ├→ svc-docker-nginx
                                               └→ svc-docker-nginx-geoipupdate
 ```
 
 - `init-docker-nginx-bootstrap`: creates `/config/geoip`, `/config/keys`, `/config/nginx/site-confs`, generates the persistent `/config/keys/quic_host.key`, and generates fallback TLS credentials when absent
-- `init-docker-nginx-samples`: removes the previous image-managed `*.conf.sample` set and refreshes samples beside active configs for host-side comparison
-- `init-docker-nginx-config`: copies missing active files from `/defaults/nginx/` without replacing user files
+- `init-docker-nginx-config`: symlinks missing config paths to immutable files under `/defaults/nginx/`, preserves regular-file overrides, and reports ignored site-conf filenames
 - `init-docker-nginx-resolver`: generates a missing resolver snippet from `/etc/resolv.conf`
 - `init-docker-nginx-geoipupdate`: validates GeoIPUpdate credentials, writes its runtime configuration, and bootstraps any missing configured database
 - `init-docker-nginx-crowdsec`: generates the enabled CrowdSec runtime and nginx configuration
 - `init-docker-nginx-permissions`: makes nginx configuration group-writable and sets root-mode ownership of `/config/**` to `abc:abc`
-- `init-docker-nginx-version-checks`: removes exact active/sample matches, warns about remaining version mismatches, and reports ignored site-conf filenames
 - `init-docker-nginx-validate`: validates the completed configuration with `nginx -t`
 - `svc-docker-nginx`: kills any zombie nginx processes then execs `nginx -e stderr`
 - `svc-docker-nginx-geoipupdate`: refreshes configured GeoIP databases immediately and every 24 hours without blocking nginx startup
@@ -69,9 +66,8 @@ The entrypoint is `/etc/nginx/nginx.conf`, which simply includes `/config/nginx/
 
 Every shipped nginx `.conf` under `root/defaults/nginx/` must begin with a
 `## Version YYYY/MM/DD` header. Whenever a shipped config is changed, update
-that file's version date as part of the same change. This is required even for
-small configuration changes so persisted `/config` users receive the startup
-warning and know to manually compare and reconcile the new default.
+that file's version date as part of the same change. The header identifies the
+revision when inspecting an image default or an explicit user override.
 
 Use the date of the change. If a version with that date has already been
 published, advance the header again before publishing; never ship different

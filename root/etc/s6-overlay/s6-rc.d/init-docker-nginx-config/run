@@ -2,14 +2,29 @@
 # shellcheck shell=bash
 set -Eeuo pipefail
 
-# Copy active default config files only when they do not already exist. The
-# adjacent .sample files are refreshed separately by the samples stage, while
-# user-managed active files are never replaced.
+# Expose immutable image defaults through /config for compatibility with
+# existing site configs. A regular file at the destination is a user override
+# and is never replaced.
 while IFS= read -r -d '' source; do
     relative_path="${source#/defaults/}"
     destination="/config/${relative_path}"
-    if [ ! -e "${destination}" ]; then
+    if [ ! -e "${destination}" ] && [ ! -L "${destination}" ]; then
         mkdir -p "$(dirname "${destination}")"
-        cp "${source}" "${destination}"
+        ln -s "${source}" "${destination}"
     fi
 done < <(find /defaults/nginx -type f -print0)
+
+ignored_site_configs=""
+while IFS= read -r -d '' site_config; do
+    ignored_site_configs+="  ${site_config}\n"
+done < <(find /config/nginx/site-confs \
+    -type f \
+    ! -name '*.subdomain.conf' \
+    ! -name '*.conf.sample' \
+    -print0)
+
+if [ -n "${ignored_site_configs}" ]; then
+    echo "**** The following site configs are ignored because their names do not end in .subdomain.conf: ****"
+    echo -e "${ignored_site_configs%\\n}"
+    echo "**** Rename each enabled site config to match *.subdomain.conf. ****"
+fi

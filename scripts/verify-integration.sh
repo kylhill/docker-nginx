@@ -103,9 +103,14 @@ bootstrap_config() {
     local volume="$1"
     docker run --rm \
         -v "${volume}:/config" \
-        --entrypoint sh \
+        --entrypoint bash \
         "${IMAGE}" \
-        -c 'cp -r /defaults/nginx /config/'
+        -c 'mkdir -p /config/nginx/site-confs
+            while IFS= read -r -d "" source; do
+                destination="/config/${source#/defaults/}"
+                mkdir -p "$(dirname "${destination}")"
+                ln -s "${source}" "${destination}"
+            done < <(find /defaults/nginx -type f -print0)'
 }
 
 install_fixtures() {
@@ -114,12 +119,15 @@ install_fixtures() {
         -v "${volume}:/config" \
         -v "${TEST_ROOT}/fixtures:/fixtures:ro" \
         --entrypoint sh \
-        "${HELPER_IMAGE}" \
+        "${IMAGE}" \
         -c 'mkdir -p /config/nginx/site-confs
             cp /fixtures/integration.subdomain.conf /config/nginx/site-confs/
             : > /config/nginx/site-confs/ignored.conf
+            rm -f /config/nginx/http.d/geoip2.conf
             cp /fixtures/geoip2.conf /config/nginx/http.d/
-            : > /config/nginx/obsolete.conf.sample
+            cp /config/nginx/nginx.conf /config/nginx/nginx.conf.override
+            rm /config/nginx/nginx.conf
+            mv /config/nginx/nginx.conf.override /config/nginx/nginx.conf
             sed -i "s|error_log stderr warn;|error_log stderr debug;|" /config/nginx/nginx.conf'
 }
 
@@ -292,20 +300,21 @@ wait_for_log "${TARGET}" 'site configs are ignored because their names do not en
 wait_for_log "${TARGET}" 'GeoIPUpdate completed successfully.'
 
 docker exec "${TARGET}" sh -c '
-    test -f /config/nginx/nginx.conf.sample
+    test ! -e /config/nginx/nginx.conf.sample
+    test ! -L /config/nginx/nginx.conf
+    test -L /config/nginx/snippets/server-base.conf
+    test "$(readlink /config/nginx/snippets/server-base.conf)" = /defaults/nginx/snippets/server-base.conf
+    test ! -L /config/nginx/http.d/geoip2.conf
     test ! -e /config/nginx/snippets/resolver.conf.sample
     test ! -e /config/nginx/snippets/static-assets.conf.sample
-    test ! -e /config/nginx/obsolete.conf.sample
     test ! -e /config/nginx/templates
     test -f /defaults/runtime/nginx/crowdsec.conf
-    cmp -s /defaults/nginx/nginx.conf /config/nginx/nginx.conf.sample
     test ! -e /config/nginx/snippets/resolver.conf
     grep -q "^resolver " /run/nginx/resolver.conf
     grep -Fq "Generated from the container" /run/nginx/resolver.conf
     test -f /run/nginx/http.d/crowdsec.conf
     test ! -e /config/nginx/http.d/crowdsec.conf
     test "$((0$(stat -c %a /config/nginx/nginx.conf) & 0020))" -ne 0
-    test "$((0$(stat -c %a /config/nginx/nginx.conf.sample) & 0020))" -ne 0
 '
 
 QUIC_HOST_KEY_SHA256="$(docker exec "${TARGET}" sha256sum \
@@ -390,14 +399,15 @@ grep -Fq 'secure-ok' "${TEST_ROOT}/http3.log" || {
 
 echo "Checking graceful shutdown and persisted /config..."
 docker exec "${TARGET}" sh -c \
-    'printf "\\n# integration-persistence-marker\\n" >> /config/nginx/snippets/hsts.conf
+    'cp /config/nginx/snippets/hsts.conf /config/nginx/snippets/hsts.conf.override
+     rm /config/nginx/snippets/hsts.conf
+     mv /config/nginx/snippets/hsts.conf.override /config/nginx/snippets/hsts.conf
+     printf "\\n# integration-persistence-marker\\n" >> /config/nginx/snippets/hsts.conf
      cat > /config/nginx/snippets/resolver-override.conf <<EOF
 ## User-managed resolver override
 resolver 127.0.0.1 ipv6=off valid=30s;
 resolver_timeout 1s;
 EOF'
-docker exec "${TARGET}" sed -i \
-    '1s|2026/07/20|2020/01/01|' /config/nginx/snippets/hsts.conf
 
 docker exec "${TRUSTED_CLIENT}" curl -sS "http://${TARGET}:8080/slow" \
     >"${TEST_ROOT}/slow-response" &
@@ -421,13 +431,15 @@ docker run -d \
     -v "${CONFIG_VOLUME}:/config" \
     "${IMAGE}" >/dev/null
 wait_running "${PERSISTED_TARGET}"
-wait_for_log "${PERSISTED_TARGET}" 'different version dates than the shipped samples'
+wait_healthy "${PERSISTED_TARGET}"
 docker exec "${PERSISTED_TARGET}" grep -Fq \
     '# integration-persistence-marker' /config/nginx/snippets/hsts.conf ||
     fail "persisted configuration was overwritten"
-docker exec "${PERSISTED_TARGET}" grep -Fq \
-    '## Version 2026/07/20' /config/nginx/snippets/hsts.conf.sample ||
-    fail "shipped sample was not refreshed"
+docker exec "${PERSISTED_TARGET}" test ! -L /config/nginx/snippets/hsts.conf ||
+    fail "user override was replaced by a default symlink"
+docker exec "${PERSISTED_TARGET}" sh -c \
+    '[ "$(readlink /config/nginx/snippets/server-base.conf)" = /defaults/nginx/snippets/server-base.conf ]' ||
+    fail "immutable default symlink was not retained"
 docker exec "${PERSISTED_TARGET}" cmp -s \
     /config/nginx/snippets/resolver-override.conf /run/nginx/resolver.conf ||
     fail "persistent resolver override was not installed into the runtime config"
