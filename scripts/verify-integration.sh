@@ -293,7 +293,7 @@ docker run -d \
 
 wait_running "${TARGET}"
 wait_healthy "${TARGET}"
-wait_for_log "${LAPI}" 'user_agent="crowdsec-nginx-bouncer/v1.1.6"'
+wait_for_log "${LAPI}" 'user_agent="crowdsec-nginx-bouncer/v1.2.0"'
 wait_for_log "${TARGET}" 'GeoIPUpdate completed successfully.'
 [ "$(docker logs "${TARGET}" 2>&1 | grep -Fc 'GeoIPUpdate completed successfully.')" = 1 ] ||
     fail "GeoIPUpdate ran more than once during initial database bootstrap"

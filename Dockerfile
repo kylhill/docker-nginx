@@ -73,8 +73,8 @@ RUN set -eux; \
     rm -rf "$GEOIPUPDATE_DIR"
 
 # Install CrowdSec nginx bouncer
-ARG CROWDSEC_BOUNCER_VERSION=1.1.6
-ARG CROWDSEC_BOUNCER_SHA256=323c6bd182cda2221d5b2d3d21b7e5e0b66ec77dd306a37299916617c3d50eea
+ARG CROWDSEC_BOUNCER_VERSION=1.2.0
+ARG CROWDSEC_BOUNCER_SHA256=2affbfcdbd3e5175a7c6ecaea021778f72788838ea30e581651edfcaabc4a3b8
 LABEL io.github.kylhill.docker-nginx.geoipupdate.version="${GEOIPUPDATE_VERSION}" \
       io.github.kylhill.docker-nginx.crowdsec-bouncer.version="${CROWDSEC_BOUNCER_VERSION}"
 COPY patches/crowdsec-lua-1.0.14.patch /tmp/crowdsec-lua.patch
