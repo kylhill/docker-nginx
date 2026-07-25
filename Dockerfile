@@ -39,7 +39,9 @@ RUN set -eux; \
   # LinuxServer non-root mode needs traverse access to load nginx modules.
   chmod 0755 /var/lib/nginx; \
   # Remove default /var/www content
-  find /var/www -mindepth 1 ! -path /var/www/favicon.ico -exec rm -rf {} +;
+  find /var/www -mindepth 1 ! -path /var/www/favicon.ico -exec rm -rf {} +; \
+  # apk.log records build timestamps and is not useful at runtime.
+  rm -f /var/log/apk.log;
 
 # Install GeoIPUpdate
 ARG GEOIPUPDATE_VERSION=8.0.0
@@ -115,7 +117,8 @@ RUN set -eux; \
     rm -f "$CROWDSEC_ARCHIVE" "${CROWDSEC_ARCHIVE}.sha256" \
       /tmp/crowdsec-lua.patch; \
     rm -rf "$CROWDSEC_DIR"; \
-    apk del .crowdsec-build-deps
+    apk del .crowdsec-build-deps; \
+    rm -f /var/log/apk.log
 
 ENV GEOIPUPDATE_EDITION_IDS="GeoLite2-Country" \
     S6_BEHAVIOUR_IF_STAGE2_FAILS="2"

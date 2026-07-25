@@ -1,8 +1,6 @@
 name: Validate Docker image
 
 on:
-  pull_request:
-    branches: [main]
   workflow_call:
     inputs:
       base_image:
@@ -49,8 +47,8 @@ jobs:
             --workdir /repo \
             "$HADOLINT_IMAGE" hadolint Dockerfile
 
-  smoke:
-    name: Smoke (${{ matrix.arch }})
+  verify:
+    name: Verify (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
@@ -78,18 +76,23 @@ jobs:
           version: ${{ env.BUILDX_VERSION }}
           driver-opts: image=${{ env.BUILDKIT_IMAGE }}
 
-      - name: Build and load image
+      - name: Build image archive
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        env:
+          SOURCE_DATE_EPOCH: "0"
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          load: true
+          outputs: type=docker,dest=${{ runner.temp }}/docker-nginx-${{ matrix.arch }}.tar,rewrite-timestamp=true
           pull: true
+          no-cache: true
+          provenance: false
           tags: docker-nginx:ci-${{ matrix.arch }}
           build-args: |
             BASE_IMAGE=${{ inputs.base_image || 'ghcr.io/linuxserver/baseimage-alpine:3.24' }}
-          cache-from: type=gha,scope=ci-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=ci-${{ matrix.arch }}
+
+      - name: Load image archive
+        run: docker load --input "${RUNNER_TEMP}/docker-nginx-${{ matrix.arch }}.tar"
 
       - name: Confirm loaded architecture
         shell: bash
@@ -107,7 +110,7 @@ jobs:
           SKIP_BUILD: "1"
         run: scripts/verify-image.sh
 
-      - name: Run amd64 integration tests
+      - name: Run integration tests
         if: matrix.arch == 'amd64'
         env:
           IMAGE: docker-nginx:ci-amd64

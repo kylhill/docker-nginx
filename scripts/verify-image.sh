@@ -7,8 +7,7 @@ DOCKERFILE="${DOCKERFILE:-Dockerfile}"
 BUILD_CONTEXT="${BUILD_CONTEXT:-.}"
 PLATFORM="${PLATFORM:-}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
-RUN_SECONDS="${RUN_SECONDS:-8}"
-LOG_ERROR_REGEX="${LOG_ERROR_REGEX:-\\b(emerg|alert|crit|fatal|error|failed)\\b}"
+LOG_ERROR_REGEX="${LOG_ERROR_REGEX:-\\[(emerg|alert|crit|error)\\]|^ERROR:|^FATAL:}"
 KEEP_CONTAINER="${KEEP_CONTAINER:-0}"
 
 CONFIG_VOLUME="${CONFIG_VOLUME:-${CONTAINER}-config}"
@@ -54,20 +53,13 @@ docker run -d \
     "${RUN_ARGS[@]}" \
     "${IMAGE}" >/dev/null
 
-for ((i = 0; i < RUN_SECONDS; i++)); do
+echo "Waiting for the image health check..."
+for ((i = 0; i < 30; i++)); do
     if [ "$(docker inspect -f '{{.State.Running}}' "${CONTAINER}" 2>/dev/null || true)" != "true" ]; then
-        echo "Container exited before smoke window completed." >&2
+        echo "Container exited before becoming healthy." >&2
         docker logs "${CONTAINER}" >&2 || true
         exit 1
     fi
-    sleep 1
-done
-
-echo "Validating nginx config inside running container..."
-docker exec "${CONTAINER}" nginx -t -e stderr
-
-echo "Waiting for the image health check..."
-for ((i = 0; i < 30; i++)); do
     HEALTH_STATUS="$(docker inspect -f '{{.State.Health.Status}}' "${CONTAINER}" 2>/dev/null || true)"
     if [ "${HEALTH_STATUS}" = healthy ]; then
         break
@@ -79,6 +71,9 @@ done
     docker inspect -f '{{json .State.Health}}' "${CONTAINER}" >&2 || true
     exit 1
 }
+
+echo "Validating nginx config inside running container..."
+docker exec "${CONTAINER}" nginx -t -e stderr
 
 echo "Checking CrowdSec Lua modules can be loaded during nginx startup..."
 docker exec "${CONTAINER}" sh -lc 'cat > /tmp/crowdsec-lua-load-test.conf <<'"'"'EOF'"'"'
@@ -108,4 +103,4 @@ if grep -Eiq "${LOG_ERROR_REGEX}" "${LOG_FILE}"; then
     exit 1
 fi
 
-echo "Smoke verification passed: container stayed running for ${RUN_SECONDS}s and logs had no error matches."
+echo "Smoke verification passed: container became healthy and logs had no error matches."

@@ -101,11 +101,11 @@ added to the container trust bundle.
 
 ### Response headers and trusted proxies
 
-`server-base.conf` enables `X-Content-Type-Options: nosniff`,
-`Referrer-Policy: strict-origin-when-cross-origin`, HSTS, and HTTP/3 `Alt-Svc`.
-The first two policies are generally safe for reverse-proxied applications,
-but `nosniff` can expose an application that serves scripts or stylesheets with
-an incorrect MIME type. Test applications after enabling a changed policy.
+`server-base.conf` enables HSTS and HTTP/3 `Alt-Svc`. It does not impose
+application-specific headers such as `X-Content-Type-Options`,
+`Referrer-Policy`, or Content Security Policy. Add those policies in the
+relevant server or location after confirming they are compatible with the
+proxied application.
 
 HSTS is isolated in `/config/nginx/snippets/hsts.conf`. Replace its default
 symlink with a regular file and comment out the `add_header` directive for
@@ -114,10 +114,8 @@ need to return to HTTP. Browsers retain HSTS for the advertised lifetime, so
 disabling it server-side does not immediately clear previously cached policy.
 
 nginx normally inherits parent-level `add_header` directives only when the
-child context defines none. The shipped security policy uses
-`add_header_inherit merge` so shared server headers remain present when a
-location adds its own headers. A location can explicitly use
-`add_header_inherit off` when it must replace the inherited policy.
+child context defines none. Account for that behavior when adding
+location-specific response headers.
 
 When another reverse proxy or CDN connects to this nginx instance, declare
 only that proxy's addresses as trusted, for example:
@@ -220,8 +218,21 @@ targets for scheduled rebuilds.
 Run `scripts/check-updates.sh` to verify pinned release checksums and report
 new GeoIPUpdate or CrowdSec bouncer releases. Run
 `scripts/check-updates.sh --update` to update the Dockerfile versions,
-checksums, and matching integration-test expectation; review the resulting
-diff and run the full verification suite before publishing.
+checksums, and patch; review the resulting diff and run the verification
+scripts before publishing.
+
+The expected development flow is to run `scripts/verify-image.sh` and
+`scripts/verify-integration.sh` locally, then push to `main`. A main-branch push
+performs fresh native amd64 and arm64 builds, runs the verification suite, and
+publishes `latest` plus a rollback tag only when every check passes.
+
+The scheduled workflow runs weekly. It builds fresh no-cache candidates for
+both architectures and compares their reproducible filesystem layers and
+operational image configuration with the published `latest` image. Labels,
+timestamps, provenance, and SBOM metadata do not trigger publication. If both
+architectures are unchanged, the workflow exits successfully without creating
+a new package version; otherwise it runs the normal verification and publishing
+path.
 
 ## Notes
 

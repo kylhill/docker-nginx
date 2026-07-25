@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "47 9 * * *"
+    - cron: "47 9 * * 0"
   workflow_dispatch:
 
 concurrency:
@@ -19,16 +19,30 @@ env:
 jobs:
   gate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: read
     outputs:
-      should_build: ${{ steps.gate.outputs.should_build }}
+      should_publish: ${{ steps.decision.outputs.should_publish }}
+      reason: ${{ steps.decision.outputs.reason }}
       base_image: ${{ steps.base.outputs.base_image }}
       base_digest: ${{ steps.base.outputs.base_digest }}
 
     steps:
+      - name: Checkout
+        if: github.event_name == 'schedule'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        if: github.event_name == 'schedule'
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        with:
+          image: ${{ env.QEMU_IMAGE }}
+          platforms: arm64
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
         with:
@@ -53,66 +67,99 @@ jobs:
           echo "base_digest=${BASE_DIGEST}" >> "$GITHUB_OUTPUT"
           echo "Upstream base digest: ${BASE_DIGEST}"
 
-      - name: Read published base digest from :latest
+      - name: Log in to GHCR for scheduled comparison
         if: github.event_name == 'schedule'
-        id: published
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decide whether to publish
+        id: decision
         shell: bash
-        run: |
-          set -euo pipefail
-          IMAGE="ghcr.io/${{ github.repository }}:latest"
-          ERROR_FILE="$(mktemp)"
-
-          if PUBLISHED_BASE_DIGEST="$(docker buildx imagetools inspect \
-            "${IMAGE}" \
-            --format '{{ index (index .Image "linux/amd64").Config.Labels "org.opencontainers.image.base.digest" }}' \
-            2>"${ERROR_FILE}")"; then
-            :
-          elif grep -Eqi 'manifest unknown|name unknown|not found' "${ERROR_FILE}"; then
-            PUBLISHED_BASE_DIGEST=""
-            echo "No existing :latest image found; scheduled build required."
-          else
-            cat "${ERROR_FILE}" >&2
-            exit 1
-          fi
-
-          echo "base_digest=${PUBLISHED_BASE_DIGEST}" >> "$GITHUB_OUTPUT"
-          echo "Published base digest: ${PUBLISHED_BASE_DIGEST}"
-
-      - name: Decide whether to build
-        id: gate
-        shell: bash
+        env:
+          BASE_IMAGE: ${{ steps.base.outputs.base_image }}@${{ steps.base.outputs.base_digest }}
+          PUBLISHED_IMAGE: ghcr.io/${{ github.repository }}:latest
+          SOURCE_DATE_EPOCH: "0"
         run: |
           set -euo pipefail
 
           if [[ "${{ github.event_name }}" != "schedule" ]]; then
-            echo "Reason: ${{ github.event_name }} event -> build"
-            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "reason=${{ github.event_name }} event" >> "$GITHUB_OUTPUT"
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          if [[ "$(date -u +%u)" == "7" ]]; then
-            echo "Reason: weekly refresh -> build"
-            echo "should_build=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          error_file="$(mktemp)"
+          if ! docker buildx imagetools inspect "${PUBLISHED_IMAGE}" \
+              >/dev/null 2>"${error_file}"; then
+            if grep -Eqi 'manifest unknown|name unknown|not found' "${error_file}"; then
+              echo "reason=no published latest image" >> "$GITHUB_OUTPUT"
+              echo "should_publish=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            cat "${error_file}" >&2
+            exit 1
           fi
 
-          BASE="${{ steps.base.outputs.base_digest }}"
-          PUBLISHED="${{ steps.published.outputs.base_digest }}"
+          changed=false
+          for arch in amd64 arm64; do
+            platform="linux/${arch}"
+            published_tag="docker-nginx:published-${arch}"
+            candidate_tag="docker-nginx:candidate-${arch}"
 
-          if [[ -z "${PUBLISHED}" ]]; then
-            echo "Reason: no published base digest label -> build"
-            echo "should_build=true" >> "$GITHUB_OUTPUT"
-          elif [[ "${BASE}" != "${PUBLISHED}" ]]; then
-            echo "Reason: base digest changed (${PUBLISHED} -> ${BASE}) -> build"
-            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            docker pull --platform "${platform}" "${PUBLISHED_IMAGE}"
+            docker tag "${PUBLISHED_IMAGE}" "${published_tag}"
+
+            docker buildx build \
+              --platform "${platform}" \
+              --pull \
+              --no-cache \
+              --provenance=false \
+              --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
+              --tag "${candidate_tag}" \
+              --output "type=docker,dest=${RUNNER_TEMP}/candidate-${arch}.tar,rewrite-timestamp=true" \
+              .
+            docker load --input "${RUNNER_TEMP}/candidate-${arch}.tar"
+
+            published_id="$(scripts/image-content-id.sh "${published_tag}")"
+            candidate_id="$(scripts/image-content-id.sh "${candidate_tag}")"
+
+            echo "${arch} published content:"
+            echo "${published_id}"
+            echo "${arch} candidate content:"
+            echo "${candidate_id}"
+
+            if [[ "${published_id}" != "${candidate_id}" ]]; then
+              changed=true
+              echo "${arch} has meaningful image changes."
+            fi
+          done
+
+          if [[ "${changed}" == true ]]; then
+            echo "reason=scheduled image content changed" >> "$GITHUB_OUTPUT"
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Reason: base digest unchanged (${BASE}) -> skip"
-            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            echo "reason=no meaningful scheduled image changes" >> "$GITHUB_OUTPUT"
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            echo "No meaningful image changes; verification and publication will be skipped."
           fi
+
+      - name: Write gate summary
+        shell: bash
+        run: |
+          {
+            echo "## Publish decision"
+            echo
+            echo "- Publish: \`${{ steps.decision.outputs.should_publish }}\`"
+            echo "- Reason: ${{ steps.decision.outputs.reason }}"
+            echo "- Base: \`${{ steps.base.outputs.base_image }}@${{ steps.base.outputs.base_digest }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   verify:
     needs: gate
-    if: needs.gate.outputs.should_build == 'true'
+    if: needs.gate.outputs.should_publish == 'true'
     permissions:
       contents: read
     uses: ./.github/workflows/docker-ci.yml
@@ -123,7 +170,7 @@ jobs:
     needs: [gate, verify]
     if: >-
       ${{ always() &&
-          needs.gate.outputs.should_build == 'true' &&
+          needs.gate.outputs.should_publish == 'true' &&
           needs.verify.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -167,10 +214,12 @@ jobs:
       - name: Build and push multi-platform image
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        env:
+          SOURCE_DATE_EPOCH: "0"
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: true
+          outputs: type=image,push=true,rewrite-timestamp=true
           pull: true
           no-cache: true
           build-args: |
@@ -178,7 +227,6 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ steps.image.outputs.version }}
-          cache-to: type=gha,mode=max
           provenance: mode=max
           sbom: true
           labels: |

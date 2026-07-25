@@ -17,7 +17,7 @@ docker buildx build --platform linux/amd64,linux/arm64 -t docker-nginx .
 scripts/verify-image.sh
 ```
 
-There are no unit tests. `scripts/verify-image.sh` is the core smoke test to run after Dockerfile, nginx config, or container startup changes. `scripts/verify-integration.sh` adds enabled-CrowdSec, secret-file conventions, resolver generation, config naming and permissions, read-only and non-root modes, persistence, TLS/HTTP2/HTTP3, GeoIP failure, and graceful-shutdown coverage. The smoke test builds the image, starts it with a temporary `/config` Docker volume, runs nginx validation, checks the CrowdSec Lua modules during nginx startup, and fails if startup logs contain error-level patterns.
+There are no unit tests. `scripts/verify-image.sh` is the core smoke test to run after Dockerfile, nginx config, or container startup changes. `scripts/verify-integration.sh` covers enabled CrowdSec, secret-file conventions, resolver generation, immutable defaults and overrides, read-only and arbitrary-UID modes, persistence, TLS, and HTTP/2. The smoke test builds the image, starts it with a temporary `/config` Docker volume, waits for health, runs nginx validation, checks the CrowdSec Lua modules during nginx startup, and fails if startup logs contain error-level patterns.
 
 ## Architecture
 
@@ -110,4 +110,4 @@ up default `/var/www` content for all platforms.
 
 ### CI / Publishing
 
-Pull requests run ShellCheck, Hadolint, amd64 integration tests, and core smoke tests on both amd64 and arm64 under QEMU. Pushes to `main` and scheduled publishing reuse those checks before publishing. Daily scheduled runs compare the current upstream LinuxServer manifest digest with the digest recorded on `latest` and build only when it changed. Alpine packages and Lua rocks float at build time; GeoIPUpdate and the CrowdSec bouncer are fixed and checksum-verified. GitHub Actions remain pinned to immutable commit SHAs. Images are tagged as both `latest` and a source/run-specific rollback tag, with SBOM and provenance attestations attached.
+The expected workflow is local verification followed by a push to `main`. Main pushes run ShellCheck, Hadolint, amd64 integration tests, and core smoke tests on native amd64 and arm64 runners before publishing. Weekly scheduled runs build fresh no-cache candidates for both architectures, compare reproducible filesystem layers and operational image configuration with `latest`, and skip verification and publishing when both are unchanged. Alpine packages float at build time; GeoIPUpdate and the CrowdSec bouncer are fixed and checksum-verified. GitHub Actions remain pinned to immutable commit SHAs. Published images are tagged as both `latest` and a source/run-specific rollback tag, with SBOM and provenance attestations attached.
