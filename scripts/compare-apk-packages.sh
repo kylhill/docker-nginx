@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PUBLISHED_IMAGE="${PUBLISHED_IMAGE:-ghcr.io/kylhill/docker-nginx:latest}"
+ARCHES="${ARCHES:-amd64 arm64}"
+read -r -a ARCH_LIST <<< "${ARCHES}"
+TEMP_DIR="$(mktemp -d)"
+
+cleanup() {
+    docker image rm \
+        docker-nginx:apk-candidate-amd64 \
+        docker-nginx:apk-candidate-arm64 \
+        docker-nginx:apk-published-amd64 \
+        docker-nginx:apk-published-arm64 \
+        >/dev/null 2>&1 || true
+    rm -rf "${TEMP_DIR}"
+}
+trap cleanup EXIT
+
+for command in docker sort comm; do
+    command -v "${command}" >/dev/null || {
+        echo "Required command not found: ${command}" >&2
+        exit 1
+    }
+done
+
+updates=false
+report="${TEMP_DIR}/report.md"
+{
+    echo "## Floating Alpine packages"
+    echo
+    echo "Fresh no-cache builds are compared with \`${PUBLISHED_IMAGE}\`."
+} > "${report}"
+
+for arch in "${ARCH_LIST[@]}"; do
+    [[ "${arch}" == amd64 || "${arch}" == arm64 ]] || {
+        echo "Unsupported architecture: ${arch}" >&2
+        exit 2
+    }
+    platform="linux/${arch}"
+    candidate="docker-nginx:apk-candidate-${arch}"
+    published="docker-nginx:apk-published-${arch}"
+    candidate_packages="${TEMP_DIR}/candidate-${arch}.txt"
+    published_packages="${TEMP_DIR}/published-${arch}.txt"
+    added="${TEMP_DIR}/added-${arch}.txt"
+    removed="${TEMP_DIR}/removed-${arch}.txt"
+
+    docker buildx build \
+        --platform "${platform}" \
+        --pull \
+        --no-cache \
+        --load \
+        --tag "${candidate}" \
+        "${REPOSITORY_ROOT}" >/dev/null
+
+    {
+        echo
+        echo "### \`${platform}\`"
+        echo
+    } >> "${report}"
+
+    if ! docker pull --platform "${platform}" "${PUBLISHED_IMAGE}" >/dev/null; then
+        updates=true
+        echo "The published comparison image is unavailable." >> "${report}"
+        continue
+    fi
+
+    docker tag "${PUBLISHED_IMAGE}" "${published}"
+    docker run --rm --platform "${platform}" --entrypoint apk \
+        "${candidate}" info -v | sort > "${candidate_packages}"
+    docker run --rm --platform "${platform}" --entrypoint apk \
+        "${published}" info -v | sort > "${published_packages}"
+
+    comm -13 "${published_packages}" "${candidate_packages}" > "${added}"
+    comm -23 "${published_packages}" "${candidate_packages}" > "${removed}"
+
+    if [[ ! -s "${added}" && ! -s "${removed}" ]]; then
+        echo "No package changes." >> "${report}"
+        continue
+    fi
+
+    updates=true
+    if [[ -s "${removed}" ]]; then
+        {
+            echo "Current-only package versions:"
+            echo '```text'
+            sed -n '1,100p' "${removed}"
+            echo '```'
+        } >> "${report}"
+    fi
+    if [[ -s "${added}" ]]; then
+        {
+            echo "Candidate package versions:"
+            echo '```text'
+            sed -n '1,100p' "${added}"
+            echo '```'
+        } >> "${report}"
+    fi
+done
+
+echo "<!-- apk-updates-available:${updates} -->"
+cat "${report}"

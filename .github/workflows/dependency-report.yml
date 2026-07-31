@@ -1,0 +1,117 @@
+name: Dependency update report
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: dependency-update-report
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+  packages: read
+
+env:
+  # renovate: datasource=github-releases depName=docker/buildx
+  BUILDX_VERSION: v0.36.0
+  # renovate: datasource=docker depName=moby/buildkit
+  BUILDKIT_IMAGE: moby/buildkit:v0.32.0@sha256:1f8167fcb0eca5b7126353d35299386945cbb8949cc516c592a49f80cfce4fa2
+  # renovate: datasource=docker depName=tonistiigi/binfmt
+  QEMU_IMAGE: tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+  # renovate: datasource=docker depName=renovate/renovate
+  RENOVATE_IMAGE: renovate/renovate:44.5.0@sha256:f4deb31a89607be6df150d412408d7957568c057ff66cbc1e6f3a5c519345167
+
+jobs:
+  report:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        with:
+          image: ${{ env.QEMU_IMAGE }}
+          platforms: arm64
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+          driver-opts: image=${{ env.BUILDKIT_IMAGE }}
+
+      - name: Audit dependency coverage with Renovate
+        run: |
+          docker run --rm \
+            --volume "$PWD:/repo:ro" \
+            --entrypoint renovate-config-validator \
+            "$RENOVATE_IMAGE" /repo/renovate.json
+          docker run --rm \
+            --volume "$PWD:/repo:ro" \
+            --workdir /repo \
+            --env LOG_LEVEL=debug \
+            --entrypoint renovate \
+            "$RENOVATE_IMAGE" \
+            --platform=local --dry-run=extract
+
+      - name: Check source-controlled dependencies
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/check-updates.sh --check --format markdown > "$RUNNER_TEMP/source-dependencies.md"
+
+      - name: Compare floating Alpine packages
+        run: scripts/compare-apk-packages.sh > "$RUNNER_TEMP/apk-packages.md"
+
+      - name: Build report
+        run: |
+          {
+            echo "<!-- docker-nginx-dependency-report -->"
+            echo "Last checked: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+            echo
+            cat "$RUNNER_TEMP/source-dependencies.md"
+            echo
+            cat "$RUNNER_TEMP/apk-packages.md"
+            echo
+            echo "Apply every available update locally with:"
+            echo '```bash'
+            echo 'scripts/check-updates.sh --update'
+            echo 'scripts/verify-image.sh'
+            echo 'scripts/verify-integration.sh'
+            echo '```'
+          } > "$RUNNER_TEMP/dependency-report.md"
+          cat "$RUNNER_TEMP/dependency-report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Update tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          title="Dependency update report"
+          issue_number="$(gh api \
+            "repos/${GH_REPO}/issues?state=all&per_page=100" \
+            --jq '[.[] | select(.pull_request == null and .title ==
+              "Dependency update report")][0].number // empty')"
+
+          if grep -q '<!-- updates-available:true -->' "$RUNNER_TEMP/dependency-report.md" ||
+              grep -q '<!-- apk-updates-available:true -->' "$RUNNER_TEMP/dependency-report.md"; then
+            if [[ -n "${issue_number}" ]]; then
+              gh api --method PATCH "repos/${GH_REPO}/issues/${issue_number}" \
+                --field state=open \
+                --field body=@"$RUNNER_TEMP/dependency-report.md" >/dev/null
+            else
+              gh api --method POST "repos/${GH_REPO}/issues" \
+                --field title="${title}" \
+                --field body=@"$RUNNER_TEMP/dependency-report.md" >/dev/null
+            fi
+          elif [[ -n "${issue_number}" ]]; then
+            gh api --method PATCH "repos/${GH_REPO}/issues/${issue_number}" \
+              --field state=closed \
+              --field body=@"$RUNNER_TEMP/dependency-report.md" >/dev/null
+          fi

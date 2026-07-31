@@ -2,21 +2,19 @@ name: Validate Docker image
 
 on:
   workflow_call:
-    inputs:
-      base_image:
-        description: Base image reference, optionally pinned by digest
-        required: false
-        type: string
-        default: ghcr.io/linuxserver/baseimage-alpine:3.24
 
 permissions:
   contents: read
 
 env:
-  BUILDX_VERSION: v0.35.0
-  BUILDKIT_IMAGE: moby/buildkit:v0.31.2@sha256:2f5adac4ecd194d9f8c10b7b5d7bceb5186853db1b26e5abd3a657af0b7e26ec
+  # renovate: datasource=github-releases depName=docker/buildx
+  BUILDX_VERSION: v0.36.0
+  # renovate: datasource=docker depName=moby/buildkit
+  BUILDKIT_IMAGE: moby/buildkit:v0.32.0@sha256:1f8167fcb0eca5b7126353d35299386945cbb8949cc516c592a49f80cfce4fa2
+  # renovate: datasource=docker depName=koalaman/shellcheck
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
-  HADOLINT_IMAGE: ghcr.io/hadolint/hadolint:v2.14.0-debian@sha256:158cd0184dcaa18bd8ec20b61f4c1cabdf8b32a592d062f57bdcb8e4c1d312e2
+  # renovate: datasource=docker depName=ghcr.io/hadolint/hadolint
+  HADOLINT_IMAGE: ghcr.io/hadolint/hadolint:v2.15.1-debian@sha256:9a3944b7fddcb947d1ffd90829ac1a6e5c30479223358f249d8b96c7d0019e27
 
 jobs:
   lint:
@@ -24,7 +22,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -64,7 +62,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -83,8 +81,6 @@ jobs:
           pull: true
           no-cache: true
           tags: docker-nginx:ci-${{ matrix.arch }}
-          build-args: |
-            BASE_IMAGE=${{ inputs.base_image || 'ghcr.io/linuxserver/baseimage-alpine:3.24' }}
 
       - name: Confirm loaded architecture
         shell: bash

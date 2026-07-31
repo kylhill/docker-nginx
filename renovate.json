@@ -1,0 +1,37 @@
+{
+  "extends": ["config:recommended"],
+  "enabledManagers": [
+    "custom.regex",
+    "docker-compose",
+    "dockerfile",
+    "github-actions"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Docker images pinned in workflow environment variables",
+      "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
+      "matchStrings": [
+        "# renovate: datasource=docker depName=(?<depName>\\S+)\\s+[A-Z0-9_]+_IMAGE:\\s+\\S+:(?<currentValue>[^@\\s]+)@sha256:(?<currentDigest>[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "GitHub release versions pinned in Dockerfile ARGs and workflows",
+      "managerFilePatterns": ["/(^Dockerfile|^\\.github/workflows/.*\\.ya?ml)$/"],
+      "matchStrings": [
+        "# renovate: datasource=github-releases depName=(?<depName>\\S+)\\s+(?:ARG\\s+)?[A-Z0-9_]+(?:_VERSION)?:?=?\\s*(?<currentValue>v?[^\\s]+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver-coerced"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "The example intentionally follows this repository's latest image",
+      "matchPackageNames": ["ghcr.io/kylhill/docker-nginx"],
+      "enabled": false
+    }
+  ]
+}

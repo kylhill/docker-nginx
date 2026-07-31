@@ -208,30 +208,47 @@ for remediation.
 
 ## Dependency Updates
 
-The image follows the newest upstream LinuxServer Alpine tag and resolves
-current Alpine packages during each fresh CI build. GeoIPUpdate and the
-CrowdSec nginx bouncer are fixed to reviewed versions in the Dockerfile;
-downloaded release archives are checksum-verified. Published images include
-SBOM and provenance attestations, and source/run-specific tags provide rollback
-targets for scheduled rebuilds.
+The LinuxServer base image, Dockerfile frontend, CI helper images, GitHub
+Actions, GeoIPUpdate, and the CrowdSec nginx bouncer are pinned. Release
+archives are checksum-verified. Alpine packages intentionally float within the
+pinned base release; `APK_REFRESH_DATE` records deliberate package refreshes in
+source control.
 
-Run `scripts/check-updates.sh` to verify pinned release checksums and report
-new GeoIPUpdate or CrowdSec bouncer releases. Run
-`scripts/check-updates.sh --update` to update the Dockerfile versions,
-checksums, and patch; review the resulting diff and run the verification
-scripts before publishing.
+The weekly `Dependency update report` workflow uses Renovate as a coverage
+audit and the repository update scripts as the authoritative report. It checks
+all source-controlled pins, builds fresh amd64 and arm64 candidates, and
+compares their installed Alpine packages with the published `latest` image.
+When updates exist it creates or reopens a single GitHub tracking issue and
+updates its body. When everything is current it closes that issue. Finding an
+update is informational and does not make the workflow fail or publish an
+image. GitHub is the reporting mirror only: the workflow does not open pull
+requests or modify source.
+
+Run the same check locally in text, Markdown, or JSON form:
+
+```bash
+scripts/check-updates.sh --check
+scripts/check-updates.sh --check --format markdown
+scripts/check-updates.sh --check --format json
+```
+
+Apply every available update, including major releases, with one command:
+
+```bash
+scripts/check-updates.sh --update
+```
+
+The command updates action SHAs and version comments, image tags and digests,
+the base image, release versions and checksums, and `APK_REFRESH_DATE` when a
+fresh package set differs from `latest`. It leaves a reviewable working-tree
+diff; it does not commit, push, or publish. Review that diff and run both
+verification scripts before pushing to `main`.
 
 The expected development flow is to run `scripts/verify-image.sh` and
-`scripts/verify-integration.sh` locally, then push directly to `main`. The push
-runs linting, fresh native amd64 and arm64 verification, and publishes `latest`
-plus a rollback tag only when every check passes.
-
-The scheduled workflow runs weekly. It compares the current LinuxServer base
-image digest with the digest recorded on the published `latest` image. If the
-digest is unchanged, the workflow exits successfully without creating a new
-package version; otherwise it runs the normal verification and publishing path.
-Changes to floating Alpine packages alone are picked up on the next main push
-or upstream base-image digest change.
+`scripts/verify-integration.sh` locally, then push directly to `main` on the
+authoritative Forgejo repository. Its GitHub mirror runs linting, fresh native
+amd64 and arm64 verification, and publishes `latest` plus a rollback tag only
+when every check passes.
 
 ## Notes
 

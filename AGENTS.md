@@ -105,9 +105,10 @@ hardening profile.
 
 `Dockerfile` is used for both local and CI builds. CI builds a multi-platform
 image for amd64 and arm64 via buildx; architecture-specific downloads select
-their artifact and checksum from the target Alpine architecture. The Dockerfile
-cleans up default `/var/www` content for all platforms.
+their artifact and checksum from the target Alpine architecture. The base image
+and Dockerfile frontend are pinned by digest. The Dockerfile cleans up default
+`/var/www` content for all platforms.
 
 ### CI / Publishing
 
-The expected workflow is local verification followed by a direct push to `main`. Main pushes run ShellCheck, Hadolint, amd64 integration tests, and core smoke tests on native amd64 and arm64 runners before publishing. Weekly scheduled runs compare the current upstream base digest with the digest recorded on `latest`, skipping verification and publication when it is unchanged. Alpine packages float at build time; GeoIPUpdate and the CrowdSec bouncer are fixed and checksum-verified. GitHub Actions remain pinned to immutable commit SHAs. Published images are tagged as both `latest` and a source/run-specific rollback tag, with SBOM and provenance attestations attached.
+The expected workflow is local verification followed by a direct push to `main` on the authoritative Forgejo repository; GitHub is the CI and reporting mirror. Mirrored main pushes run ShellCheck, Hadolint, amd64 integration tests, and core smoke tests on native amd64 and arm64 runners before publishing. The weekly dependency-report workflow audits pins with Renovate, reports actionable source updates in one GitHub issue, and compares fresh amd64 and arm64 Alpine package inventories with `latest`; it never publishes or opens pull requests. `scripts/check-updates.sh --update` applies all available pin and checksum updates and bumps `APK_REFRESH_DATE` when floating Alpine packages changed, leaving a local diff for review. GeoIPUpdate and the CrowdSec bouncer are fixed and checksum-verified. GitHub Actions remain pinned to immutable commit SHAs. Published images are tagged as both `latest` and a source/run-specific rollback tag, with SBOM and provenance attestations attached.
