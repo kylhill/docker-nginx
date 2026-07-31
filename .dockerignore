@@ -1,7 +1,8 @@
-.git
-.gitignore
-.github
-scripts/
-AGENTS.md
-README.md
-LICENSE
+# Keep the build context limited to inputs referenced by Dockerfile.
+**
+
+!Dockerfile
+!root/
+!root/**
+!patches/
+!patches/crowdsec-lua.patch

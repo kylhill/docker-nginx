@@ -30,7 +30,7 @@ case "${FORMAT}" in
     *) echo "Unsupported format: ${FORMAT}" >&2; exit 2 ;;
 esac
 
-for command in curl docker git jq patch rg sed sha256sum sort tar; do
+for command in curl docker git grep jq patch sed sha256sum sort tar; do
     command -v "${command}" >/dev/null || {
         echo "Required command not found: ${command}" >&2
         exit 1
@@ -51,9 +51,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
-CURL_ARGS=(--fail --silent --show-error --location)
+CURL_ARGS=(
+    --fail
+    --silent
+    --show-error
+    --location
+    --retry 5
+    --retry-all-errors
+    --retry-delay 2
+    --retry-max-time 60
+)
+GITHUB_CURL_ARGS=("${CURL_ARGS[@]}")
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-    CURL_ARGS+=(--header "Authorization: Bearer ${GITHUB_TOKEN}")
+    GITHUB_CURL_ARGS+=(--header "Authorization: Bearer ${GITHUB_TOKEN}")
 fi
 
 latest_github_version() {
@@ -131,7 +141,7 @@ latest_linuxserver_tag() {
     local -a query
     local tags_file="${TEMP_DIR}/linuxserver-tags"
     : > "${tags_file}"
-    token="$(curl --fail --silent --show-error --location \
+    token="$(curl "${CURL_ARGS[@]}" \
         'https://ghcr.io/token?scope=repository:linuxserver/baseimage-alpine:pull' \
         | jq -er '.token')"
 
@@ -139,7 +149,7 @@ latest_linuxserver_tag() {
     while :; do
         query=(--data-urlencode 'n=1000')
         [[ -z "${last_tag}" ]] || query+=(--data-urlencode "last=${last_tag}")
-        body="$(curl --fail --silent --show-error --location --get \
+        body="$(curl "${CURL_ARGS[@]}" --get \
             --header "Authorization: Bearer ${token}" \
             "${query[@]}" \
             'https://ghcr.io/v2/linuxserver/baseimage-alpine/tags/list')"
@@ -188,7 +198,7 @@ update_action_pins() {
                 "\\1${latest_sha}\\2${latest_tag}" \
                 "${WORKFLOW_DIR}"/*.yml
         fi
-    done < <(rg --no-filename 'uses:[[:space:]]+[^./][^@[:space:]]+@[a-f0-9]{40}' \
+    done < <(grep -rhE 'uses:[[:space:]]+[^./][^@[:space:]]+@[a-f0-9]{40}' \
         "${WORKFLOW_DIR}" | sort -u)
 }
 
@@ -224,7 +234,7 @@ update_buildx() {
 update_image_pin() {
     local name="$1" source_repository="$2" tag_template="$3"
     local current_ref current_tag current_digest release_tag latest_tag latest_digest latest_ref
-    current_ref="$(rg --no-filename -o \
+    current_ref="$(grep -rhEo \
         "${name}:[^[:space:]]+@sha256:[a-f0-9]{64}" \
         "${WORKFLOW_DIR}" | sort -u)"
     [[ -n "${current_ref}" && "$(wc -l <<<"${current_ref}")" -eq 1 ]] || {
@@ -299,7 +309,7 @@ update_dockerfile_frontend() {
 }
 
 download() {
-    curl "${CURL_ARGS[@]}" "$1" --output "$2"
+    curl "${GITHUB_CURL_ARGS[@]}" "$1" --output "$2"
 }
 
 checksum() {
@@ -351,14 +361,16 @@ audit_inventory() {
             echo "Unmanaged workflow image pin: ${ref}" >&2
             exit 1
         }
-    done < <(rg --no-filename -o '[[:alnum:]./_-]+:[^[:space:]]+@sha256:[a-f0-9]{64}' \
+    done < <(grep -rhEo '[[:alnum:]./_-]+:[^[:space:]]+@sha256:[a-f0-9]{64}' \
         "${WORKFLOW_DIR}" | sort -u)
 
-    if rg -n 'uses:[[:space:]]+[^./][^@[:space:]]+@(?![a-f0-9]{40})' \
-        "${WORKFLOW_DIR}" --pcre2 >/dev/null; then
-        echo "Every external GitHub Action must use a full commit SHA." >&2
-        exit 1
-    fi
+    while IFS= read -r ref; do
+        [[ "${ref}" =~ @[a-f0-9]{40}$ ]] || {
+            echo "External GitHub Action is not pinned to a commit SHA: ${ref}" >&2
+            exit 1
+        }
+    done < <(grep -rhEo 'uses:[[:space:]]+[^./][^[:space:]]+' \
+        "${WORKFLOW_DIR}" | sed -E 's/^uses:[[:space:]]+//' | sort -u)
 
     dockerfile_args="$(sed -nE 's/^ARG ([A-Z0-9_]+)=.*/\1/p' \
         "${DOCKERFILE}" | sort)"
@@ -384,7 +396,7 @@ compare_apk_and_refresh() {
     ARCHES="${APK_COMPARE_ARCHES:-amd64 arm64}" \
         PUBLISHED_IMAGE="${PUBLISHED_IMAGE}" \
         "${REPOSITORY_ROOT}/scripts/compare-apk-packages.sh" > "${apk_report}"
-    if rg -q '<!-- apk-updates-available:true -->' "${apk_report}"; then
+    if grep -q '<!-- apk-updates-available:true -->' "${apk_report}"; then
         record apk floating-packages changed refresh-required
         replace_all '^(ARG APK_REFRESH_DATE=).*' "\\1$(date -u +%F)" "${DOCKERFILE}"
     else
