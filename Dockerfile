@@ -5,6 +5,8 @@
 ARG BASE_IMAGE=ghcr.io/linuxserver/baseimage-alpine:3.24@sha256:15e4f2ab8c6921ee238e730eb8b53c59e31c99e9b817b6206063c2f24e32cedb
 FROM ${BASE_IMAGE}
 
+SHELL ["/bin/ash", "-o", "pipefail", "-c"]
+
 LABEL org.opencontainers.image.title="docker-nginx" \
       org.opencontainers.image.description="nginx reverse proxy on linuxserver.io Alpine base image" \
       org.opencontainers.image.url="https://github.com/kylhill/docker-nginx" \
