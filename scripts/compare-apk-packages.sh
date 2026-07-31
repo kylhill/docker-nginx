@@ -3,8 +3,7 @@ set -Eeuo pipefail
 
 REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PUBLISHED_IMAGE="${PUBLISHED_IMAGE:-ghcr.io/kylhill/docker-nginx:latest}"
-ARCHES="${ARCHES:-amd64 arm64}"
-read -r -a ARCH_LIST <<< "${ARCHES}"
+ARCHES="${ARCHES:-${APK_COMPARE_ARCHES:-}}"
 TEMP_DIR="$(mktemp -d)"
 
 cleanup() {
@@ -23,6 +22,27 @@ for command in docker sort comm; do
         echo "Required command not found: ${command}" >&2
         exit 1
     }
+done
+
+if [[ -z "${ARCHES}" ]]; then
+    NATIVE_ARCH="$(docker version --format '{{.Server.Arch}}')"
+    case "${NATIVE_ARCH}" in
+        amd64 | arm64) ;;
+        x86_64) NATIVE_ARCH=amd64 ;;
+        aarch64) NATIVE_ARCH=arm64 ;;
+        *) echo "Unsupported Docker host architecture: ${NATIVE_ARCH}" >&2; exit 2 ;;
+    esac
+    ARCHES="${NATIVE_ARCH}"
+fi
+read -r -a ARCH_LIST <<< "${ARCHES}"
+BUILDX_DETAILS="$(docker buildx inspect --bootstrap)"
+for arch in "${ARCH_LIST[@]}"; do
+    if ! grep -Eq "Platforms:.*linux/${arch}([,[:space:]]|$)" \
+        <<< "${BUILDX_DETAILS}"; then
+        echo "Buildx cannot execute linux/${arch}." >&2
+        echo "Configure binfmt/QEMU or compare only the native architecture." >&2
+        exit 1
+    fi
 done
 
 updates=false
@@ -68,9 +88,11 @@ for arch in "${ARCH_LIST[@]}"; do
 
     docker tag "${PUBLISHED_IMAGE}" "${published}"
     docker run --rm --platform "${platform}" --entrypoint apk \
-        "${candidate}" info -v | sort > "${candidate_packages}"
+        "${candidate}" --repositories-file /dev/null info -v \
+        | sort > "${candidate_packages}"
     docker run --rm --platform "${platform}" --entrypoint apk \
-        "${published}" info -v | sort > "${published_packages}"
+        "${published}" --repositories-file /dev/null info -v \
+        | sort > "${published_packages}"
 
     comm -13 "${published_packages}" "${candidate_packages}" > "${added}"
     comm -23 "${published_packages}" "${candidate_packages}" > "${removed}"

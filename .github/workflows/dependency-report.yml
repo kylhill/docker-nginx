@@ -66,6 +66,8 @@ jobs:
         run: scripts/check-updates.sh --check --format markdown > "$RUNNER_TEMP/source-dependencies.md"
 
       - name: Compare floating Alpine packages
+        env:
+          ARCHES: amd64 arm64
         run: scripts/compare-apk-packages.sh > "$RUNNER_TEMP/apk-packages.md"
 
       - name: Build report

@@ -119,7 +119,8 @@ RUN --mount=type=bind,source=patches/crowdsec-lua.patch,target=/tmp/crowdsec-lua
     # cleanup
     rm -f "$CROWDSEC_ARCHIVE"; \
     rm -rf "$CROWDSEC_DIR"; \
-    apk del .crowdsec-build-deps; \
+    apk --no-network --repositories-file /dev/null \
+      del .crowdsec-build-deps; \
     rm -f /var/log/apk.log
 
 ENV GEOIPUPDATE_EDITION_IDS="GeoLite2-Country" \

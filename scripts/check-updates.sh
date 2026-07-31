@@ -393,8 +393,7 @@ audit_inventory() {
 compare_apk_and_refresh() {
     [[ "${MODE}" == --update && "${SKIP_APK_CHECK}" != 1 ]] || return 0
     local apk_report="${TEMP_DIR}/apk-report.md"
-    ARCHES="${APK_COMPARE_ARCHES:-amd64 arm64}" \
-        PUBLISHED_IMAGE="${PUBLISHED_IMAGE}" \
+    PUBLISHED_IMAGE="${PUBLISHED_IMAGE}" \
         "${REPOSITORY_ROOT}/scripts/compare-apk-packages.sh" > "${apk_report}"
     if grep -q '<!-- apk-updates-available:true -->' "${apk_report}"; then
         record apk floating-packages changed refresh-required
