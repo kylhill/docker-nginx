@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: docker-nginx-${{ github.ref }}
+  group: docker-nginx-registry
   cancel-in-progress: false
 
 permissions:
@@ -341,11 +341,3 @@ jobs:
           latest_digest="$(docker buildx imagetools inspect "${IMAGE}:latest" \
             --format '{{json .Manifest}}' | jq -er '.digest')"
           test "${latest_digest}" = "${EXPECTED_DIGEST}"
-
-      - name: Prune GHCR package versions (keep 20)
-        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5.0.0
-        with:
-          package-type: container
-          package-name: ${{ github.event.repository.name }}
-          min-versions-to-keep: 20
-          delete-only-untagged-versions: "false"

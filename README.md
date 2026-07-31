@@ -228,6 +228,16 @@ update is informational and does not make the workflow fail or publish an
 image. GitHub is the reporting mirror only: the workflow does not open pull
 requests or modify source.
 
+The weekly `Clean up container releases` workflow retains the newest 20
+immutable `sha-*` releases in GHCR and always protects the version tagged
+`latest`. It also traverses every retained OCI manifest index and deletes
+untagged platform and attestation manifests that are no longer reachable.
+Cleanup is separate from publishing, so a retention failure cannot change the
+result of a successful image publication; both workflows share a registry
+concurrency group so cleanup cannot race an image assembly.
+Manual cleanup runs default to a dry run; scheduled runs apply the retention
+policy.
+
 Run the same check locally in text, Markdown, or JSON form:
 
 ```bash
@@ -235,6 +245,17 @@ scripts/check-updates.sh --check
 scripts/check-updates.sh --check --format markdown
 scripts/check-updates.sh --check --format json
 ```
+
+GitHub applies a much lower API limit to anonymous requests. For reliable local
+checks, export a GitHub token before running the script:
+
+```bash
+export GITHUB_TOKEN="$(gh auth token)"
+scripts/check-updates.sh --check
+```
+
+When the anonymous limit is exhausted, the checker reports that authentication
+is required instead of treating the failed API response as a missing release.
 
 Apply every available update, including major releases, with one command:
 

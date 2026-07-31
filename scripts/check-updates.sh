@@ -57,18 +57,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
-CURL_ARGS=(
-    --fail
+COMMON_CURL_ARGS=(
     --silent
     --show-error
     --location
     --retry 5
-    --retry-all-errors
     --retry-delay 2
     --retry-max-time 60
     --connect-timeout 15
 )
-GITHUB_CURL_ARGS=("${CURL_ARGS[@]}")
+CURL_ARGS=(--fail --retry-all-errors "${COMMON_CURL_ARGS[@]}")
+GITHUB_CURL_ARGS=("${COMMON_CURL_ARGS[@]}")
 GITHUB_CURL_ARGS+=(
     --header "Accept: application/vnd.github+json"
     --header "X-GitHub-Api-Version: 2026-03-10"
@@ -77,6 +76,38 @@ if [[ -n "${GITHUB_TOKEN:-}" ]]; then
     GITHUB_CURL_ARGS+=(--header "Authorization: Bearer ${GITHUB_TOKEN}")
 fi
 
+github_api() {
+    local url="$1" output_file="${2:-}"
+    local response_file status message
+    response_file="$(mktemp "${TEMP_DIR}/github-response.XXXXXX")"
+    if ! status="$(curl "${GITHUB_CURL_ARGS[@]}" \
+        --output "${response_file}" --write-out '%{http_code}' "${url}")"; then
+        echo "GitHub API request failed: ${url}" >&2
+        rm -f "${response_file}"
+        return 1
+    fi
+
+    if [[ "${status}" =~ ^2[0-9][0-9]$ ]]; then
+        if [[ -n "${output_file}" ]]; then
+            mv "${response_file}" "${output_file}"
+        else
+            cat "${response_file}"
+            rm -f "${response_file}"
+        fi
+        return 0
+    fi
+
+    message="$(jq -r '.message // empty' "${response_file}" 2>/dev/null || true)"
+    if [[ "${status}" == 429 || "${message,,}" == *"rate limit"* ]]; then
+        echo "GitHub API rate limit exhausted; set GITHUB_TOKEN and retry." >&2
+    else
+        echo "GitHub API request failed with HTTP ${status}: ${url}" >&2
+        [[ -z "${message}" ]] || echo "GitHub response: ${message}" >&2
+    fi
+    rm -f "${response_file}"
+    return 1
+}
+
 latest_github_tag_version() {
     local repository="$1"
     local body count page=1
@@ -84,7 +115,7 @@ latest_github_tag_version() {
     : > "${tags_file}"
 
     while :; do
-        body="$(curl "${GITHUB_CURL_ARGS[@]}" \
+        body="$(github_api \
             "https://api.github.com/repos/${repository}/tags?per_page=100&page=${page}")"
         count="$(jq 'length' <<< "${body}")"
         jq -r '.[].name' <<< "${body}" >> "${tags_file}"
@@ -105,7 +136,7 @@ latest_github_version() {
 
     case "${strategy}" in
         release)
-            if body="$(curl "${GITHUB_CURL_ARGS[@]}" \
+            if body="$(github_api \
                 "https://api.github.com/repos/${repository}/releases/latest")"; then
                 latest="$(jq -er '
                     .tag_name
@@ -132,7 +163,7 @@ resolve_tag_sha() {
     local tag="$2"
     local sha
 
-    sha="$(curl "${GITHUB_CURL_ARGS[@]}" \
+    sha="$(github_api \
         "https://api.github.com/repos/${repository}/commits/${tag}" \
         | jq -er '.sha')"
     [[ "${sha}" =~ ^[a-f0-9]{40}$ ]] || {
@@ -450,7 +481,7 @@ update_dockerfile_frontend() {
 }
 
 download() {
-    curl "${GITHUB_CURL_ARGS[@]}" "$1" --output "$2"
+    github_api "$1" "$2"
 }
 
 checksum() {
@@ -462,9 +493,9 @@ github_release_asset_checksum() {
     local cache_file digest
     cache_file="${TEMP_DIR}/release-${repository//\//_}-${tag}.json"
     if [[ ! -s "${cache_file}" ]]; then
-        curl "${GITHUB_CURL_ARGS[@]}" \
+        github_api \
             "https://api.github.com/repos/${repository}/releases/tags/${tag}" \
-            --output "${cache_file}" || return 1
+            "${cache_file}" || return 1
     fi
     digest="$(jq -er --arg name "${asset_name}" '
         .assets[]

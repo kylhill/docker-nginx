@@ -135,10 +135,16 @@ jobs:
         run: |
           set -euo pipefail
           title="Dependency update report"
-          issue_number="$(gh api \
+          marker='<!-- docker-nginx-dependency-report -->'
+          mapfile -t issue_numbers < <(gh api --paginate \
             "repos/${GH_REPO}/issues?state=all&per_page=100" \
-            --jq '[.[] | select(.pull_request == null and .title ==
-              "Dependency update report")][0].number // empty')"
+            --jq ".[] | select(.pull_request == null and
+              ((.body // \"\") | contains(\"${marker}\"))) | .number")
+          ((${#issue_numbers[@]} <= 1)) || {
+            echo "Multiple dependency tracking issues contain ${marker}" >&2
+            exit 1
+          }
+          issue_number="${issue_numbers[0]:-}"
 
           if grep -q '<!-- updates-available:true -->' "$RUNNER_TEMP/dependency-report.md" ||
               grep -q '<!-- apk-updates-available:true -->' "$RUNNER_TEMP/dependency-report.md"; then

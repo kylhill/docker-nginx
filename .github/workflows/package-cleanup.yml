@@ -1,0 +1,180 @@
+name: Clean up container releases
+
+on:
+  schedule:
+    - cron: "43 10 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Report deletions without applying them
+        type: boolean
+        default: true
+
+concurrency:
+  group: docker-nginx-registry
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  RELEASES_TO_KEEP: "20"
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Delete old immutable releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          OWNER_TYPE: ${{ github.event.repository.owner.type }}
+          PACKAGE_NAME: ${{ github.event.repository.name }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          case "${OWNER_TYPE}" in
+            Organization) package_path="orgs/${OWNER}" ;;
+            User) package_path="users/${OWNER}" ;;
+            *) echo "Unsupported repository owner type: ${OWNER_TYPE}" >&2; exit 1 ;;
+          esac
+          package_path+="/packages/container/${PACKAGE_NAME}/versions"
+          versions_file="${RUNNER_TEMP}/package-versions.json"
+
+          gh api --paginate --slurp \
+            "${package_path}?state=active&per_page=100" > "${versions_file}"
+
+          latest_count="$(jq '[.[][] | select(
+            (.metadata.container.tags // []) | index("latest"))] | length' \
+            "${versions_file}")"
+          [[ "${latest_count}" -eq 1 ]] || {
+            echo "Expected exactly one package version tagged latest; found ${latest_count}." >&2
+            exit 1
+          }
+
+          mapfile -t expired_versions < <(jq -r \
+            --argjson keep "${RELEASES_TO_KEEP}" '
+              [.[][]
+                | .tags = (.metadata.container.tags // [])
+                | select(any(.tags[]; test("^sha-[0-9a-f]{12}-[0-9]+$")))]
+              | sort_by(.created_at) | reverse | .[$keep:]
+              | .[]
+              | select((.tags | index("latest")) == null)
+              | select(all(.tags[]; test("^sha-[0-9a-f]{12}-[0-9]+$")))
+              | [.id, .name, (.tags | join(","))] | @tsv
+            ' "${versions_file}")
+
+          declare -A expired_ids=()
+          for version in "${expired_versions[@]}"; do
+            IFS=$'\t' read -r version_id _ _ <<< "${version}"
+            expired_ids["${version_id}"]=1
+          done
+
+          printf '%s' "${GH_TOKEN}" | docker login ghcr.io \
+            --username "${OWNER}" --password-stdin >/dev/null
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+
+          image="ghcr.io/${OWNER}/${PACKAGE_NAME}"
+          declare -A reachable=()
+          collect_reachable_manifests() {
+            local digest="$1" raw
+            local -a children
+            [[ "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+              echo "Invalid retained manifest digest: ${digest}" >&2
+              exit 1
+            }
+            [[ -z "${reachable[${digest}]:-}" ]] || return 0
+            reachable["${digest}"]=1
+            raw="$(docker buildx imagetools inspect --raw "${image}@${digest}")"
+            mapfile -t children < <(jq -r '.manifests[]?.digest' <<< "${raw}")
+            for child in "${children[@]}"; do
+              collect_reachable_manifests "${child}"
+            done
+          }
+
+          while IFS=$'\t' read -r version_id digest _tags; do
+            [[ -n "${version_id}" ]] || continue
+            [[ -z "${expired_ids[${version_id}]:-}" ]] || continue
+            collect_reachable_manifests "${digest}"
+          done < <(jq -r '
+            .[][]
+            | .tags = (.metadata.container.tags // [])
+            | select(.tags | length > 0)
+            | [.id, .name, (.tags | join(","))] | @tsv
+          ' "${versions_file}")
+
+          mapfile -t untagged_versions < <(jq -r '
+            .[][]
+            | select((.metadata.container.tags // []) | length == 0)
+            | [.id, .name] | @tsv
+          ' "${versions_file}")
+
+          changed=true
+          while [[ "${changed}" == true ]]; do
+            changed=false
+            for version in "${untagged_versions[@]}"; do
+              IFS=$'\t' read -r _ digest <<< "${version}"
+              [[ "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+                echo "Invalid untagged manifest digest: ${digest}" >&2
+                exit 1
+              }
+              [[ -z "${reachable[${digest}]:-}" ]] || continue
+              raw="$(docker buildx imagetools inspect --raw "${image}@${digest}")"
+              subject="$(jq -r '.subject.digest // empty' <<< "${raw}")"
+              [[ -n "${subject}" ]] || continue
+              [[ "${subject}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+                echo "Invalid OCI subject digest: ${subject}" >&2
+                exit 1
+              }
+              if [[ -n "${reachable[${subject}]:-}" ]]; then
+                collect_reachable_manifests "${digest}"
+                changed=true
+              fi
+            done
+          done
+
+          for version in "${untagged_versions[@]}"; do
+            IFS=$'\t' read -r version_id digest <<< "${version}"
+            [[ -n "${version_id}" ]] || continue
+            [[ "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+              echo "Invalid untagged manifest digest: ${digest}" >&2
+              exit 1
+            }
+            if [[ -z "${reachable[${digest}]:-}" ]]; then
+              expired_ids["${version_id}"]=1
+              expired_versions+=("${version_id}"$'\t'"${digest}"$'\t'untagged)
+            fi
+          done
+
+          if ((${#expired_versions[@]} == 0)); then
+            echo "No expired releases or unreachable untagged objects found."
+            exit 0
+          fi
+
+          for version in "${expired_versions[@]}"; do
+            IFS=$'\t' read -r version_id digest tags <<< "${version}"
+            [[ "${version_id}" =~ ^[0-9]+$ ]] || {
+              echo "Invalid package version ID: ${version_id}" >&2
+              exit 1
+            }
+            [[ "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+              echo "Invalid package version digest: ${digest}" >&2
+              exit 1
+            }
+            if [[ "${DRY_RUN}" == true ]]; then
+              echo "Would delete ${tags} (${digest}, package version ${version_id})"
+            else
+              echo "Deleting ${tags} (${digest}, package version ${version_id})"
+              gh api --method DELETE "${package_path}/${version_id}"
+            fi
+          done
+
+          if [[ "${DRY_RUN}" == true ]]; then
+            echo "Dry run: would delete ${#expired_versions[@]} expired package version(s)."
+          else
+            echo "Deleted ${#expired_versions[@]} expired package version(s)."
+          fi
