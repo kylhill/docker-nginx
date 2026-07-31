@@ -61,20 +61,6 @@ new_volume() {
     VOLUMES+=("${volume}")
 }
 
-bootstrap_config() {
-    local volume="$1"
-    docker run --rm \
-        -v "${volume}:/config" \
-        --entrypoint bash \
-        "${IMAGE}" \
-        -c 'mkdir -p /config/nginx/site-confs
-            while IFS= read -r -d "" source; do
-                destination="/config/${source#/defaults/}"
-                mkdir -p "$(dirname "${destination}")"
-                ln -s "${source}" "${destination}"
-            done < <(find /defaults/nginx -type f -print0)'
-}
-
 install_fixtures() {
     local volume="$1"
     docker run --rm \
@@ -82,13 +68,10 @@ install_fixtures() {
         -v "${TEST_ROOT}/fixtures:/fixtures:ro" \
         --entrypoint sh \
         "${IMAGE}" \
-        -c 'mkdir -p /config/nginx/site-confs
+        -c 'mkdir -p /config/nginx/http.d /config/nginx/site-confs
+            cp /defaults/nginx/nginx.conf /config/nginx/nginx.conf
             cp /fixtures/integration.conf /config/nginx/site-confs/
-            rm -f /config/nginx/http.d/geoip2.conf
-            cp /fixtures/geoip2.conf /config/nginx/http.d/
-            cp /config/nginx/nginx.conf /config/nginx/nginx.conf.override
-            rm /config/nginx/nginx.conf
-            mv /config/nginx/nginx.conf.override /config/nginx/nginx.conf'
+            cp /fixtures/geoip2.conf /config/nginx/http.d/'
 }
 
 echo "Preparing isolated integration environment..."
@@ -214,7 +197,6 @@ done
 
 CONFIG_VOLUME="${PREFIX}-config"
 new_volume "${CONFIG_VOLUME}"
-bootstrap_config "${CONFIG_VOLUME}"
 install_fixtures "${CONFIG_VOLUME}"
 
 TARGET="${PREFIX}-target"
@@ -345,12 +327,14 @@ echo "Checking arbitrary-UID, read-only operation..."
 NONROOT_VOLUME="${PREFIX}-nonroot"
 NONROOT_TARGET="${PREFIX}-nonroot"
 new_volume "${NONROOT_VOLUME}"
-bootstrap_config "${NONROOT_VOLUME}"
+# Docker reapplies the image directory's ownership when a named volume is still
+# empty, so retain a marker while preparing the pre-writable non-root volume.
 docker run --rm \
     -v "${NONROOT_VOLUME}:/config" \
     --entrypoint sh \
     "${IMAGE}" \
-    -c 'chown -R 1000:1000 /config'
+    -c 'touch /config/.integration-volume
+        chown -R 1000:1000 /config'
 
 CONTAINERS+=("${NONROOT_TARGET}")
 DIAGNOSTIC_CONTAINERS=("${NONROOT_TARGET}")

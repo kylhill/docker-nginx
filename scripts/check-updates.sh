@@ -3,7 +3,6 @@ set -Eeuo pipefail
 
 REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DOCKERFILE="${REPOSITORY_ROOT}/Dockerfile"
-INTEGRATION_TEST="${REPOSITORY_ROOT}/scripts/verify-integration.sh"
 PATCH_FILE="${REPOSITORY_ROOT}/patches/crowdsec-lua-1.0.14.patch"
 MODE="${1:---check}"
 
@@ -139,9 +138,6 @@ replace_dockerfile_arg GEOIPUPDATE_AMD64_SHA256 "${geoip_amd64_sha}"
 replace_dockerfile_arg GEOIPUPDATE_ARM64_SHA256 "${geoip_arm64_sha}"
 replace_dockerfile_arg CROWDSEC_BOUNCER_VERSION "${target_crowdsec_version}"
 replace_dockerfile_arg CROWDSEC_BOUNCER_SHA256 "${crowdsec_sha}"
-sed -i -E \
-    "s|crowdsec-nginx-bouncer/v[0-9]+\\.[0-9]+\\.[0-9]+|crowdsec-nginx-bouncer/v${target_crowdsec_version}|g" \
-    "${INTEGRATION_TEST}"
 
 echo "Updated GeoIPUpdate to ${target_geoip_version}."
 echo "Updated CrowdSec bouncer to ${target_crowdsec_version}."

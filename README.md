@@ -222,17 +222,16 @@ checksums, and patch; review the resulting diff and run the verification
 scripts before publishing.
 
 The expected development flow is to run `scripts/verify-image.sh` and
-`scripts/verify-integration.sh` locally, then push to `main`. A main-branch push
-performs fresh native amd64 and arm64 builds, runs the verification suite, and
-publishes `latest` plus a rollback tag only when every check passes.
+`scripts/verify-integration.sh` locally, then push directly to `main`. The push
+runs linting, fresh native amd64 and arm64 verification, and publishes `latest`
+plus a rollback tag only when every check passes.
 
-The scheduled workflow runs weekly. It builds fresh no-cache candidates for
-both architectures and compares their reproducible filesystem layers and
-operational image configuration with the published `latest` image. Labels,
-timestamps, provenance, and SBOM metadata do not trigger publication. If both
-architectures are unchanged, the workflow exits successfully without creating
-a new package version; otherwise it runs the normal verification and publishing
-path.
+The scheduled workflow runs weekly. It compares the current LinuxServer base
+image digest with the digest recorded on the published `latest` image. If the
+digest is unchanged, the workflow exits successfully without creating a new
+package version; otherwise it runs the normal verification and publishing path.
+Changes to floating Alpine packages alone are picked up on the next main push
+or upstream base-image digest change.
 
 ## Notes
 

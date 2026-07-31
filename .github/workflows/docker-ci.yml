@@ -58,11 +58,9 @@ jobs:
           - arch: amd64
             runner: ubuntu-24.04
             platform: linux/amd64
-            expected_arch: amd64
           - arch: arm64
             runner: ubuntu-24.04-arm
             platform: linux/arm64
-            expected_arch: arm64
 
     steps:
       - name: Checkout
@@ -76,23 +74,17 @@ jobs:
           version: ${{ env.BUILDX_VERSION }}
           driver-opts: image=${{ env.BUILDKIT_IMAGE }}
 
-      - name: Build image archive
+      - name: Build and load image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        env:
-          SOURCE_DATE_EPOCH: "0"
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          outputs: type=docker,dest=${{ runner.temp }}/docker-nginx-${{ matrix.arch }}.tar,rewrite-timestamp=true
+          load: true
           pull: true
           no-cache: true
-          provenance: false
           tags: docker-nginx:ci-${{ matrix.arch }}
           build-args: |
             BASE_IMAGE=${{ inputs.base_image || 'ghcr.io/linuxserver/baseimage-alpine:3.24' }}
-
-      - name: Load image archive
-        run: docker load --input "${RUNNER_TEMP}/docker-nginx-${{ matrix.arch }}.tar"
 
       - name: Confirm loaded architecture
         shell: bash
@@ -101,7 +93,7 @@ jobs:
           actual="$(docker image inspect \
             --format '{{.Architecture}}' \
             docker-nginx:ci-${{ matrix.arch }})"
-          test "${actual}" = "${{ matrix.expected_arch }}"
+          test "${actual}" = "${{ matrix.arch }}"
 
       - name: Run core smoke test
         env:

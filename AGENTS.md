@@ -90,7 +90,7 @@ by the nginx include glob.
 | `GEOIPUPDATE_LICENSE_KEY` | MaxMind license key |
 | `GEOIPUPDATE_EDITION_IDS` | Database editions (default: `GeoLite2-Country`) |
 
-`GEOIPUPDATE_ACCOUNT_ID`, `GEOIPUPDATE_LICENSE_KEY`, and `CROWDSEC_NGINX_API_KEY` support both the `_FILE` suffix pattern (e.g., `GEOIPUPDATE_LICENSE_KEY_FILE=/run/secrets/maxmind_key`) and LinuxServer's `FILE__VARIABLE` convention (e.g., `FILE__GEOIPUPDATE_LICENSE_KEY=/run/secrets/maxmind_key`). `GEOIPUPDATE_EDITION_IDS` is a non-secret database selection setting.
+`GEOIPUPDATE_ACCOUNT_ID`, `GEOIPUPDATE_LICENSE_KEY`, and `CROWDSEC_NGINX_API_KEY` support LinuxServer's `FILE__VARIABLE` convention (e.g., `FILE__GEOIPUPDATE_LICENSE_KEY=/run/secrets/maxmind_key`). `GEOIPUPDATE_EDITION_IDS` is a non-secret database selection setting.
 
 Generated GeoIPUpdate and CrowdSec credential files live under `/run`; read-only deployments require writable `/config` plus tmpfs mounts for `/run:exec` and `/tmp`.
 
@@ -105,9 +105,9 @@ hardening profile.
 
 `Dockerfile` is used for both local and CI builds. CI builds a multi-platform
 image for amd64 and arm64 via buildx; architecture-specific downloads select
-their artifact and checksum with BuildKit's `TARGETARCH`. The Dockerfile cleans
-up default `/var/www` content for all platforms.
+their artifact and checksum from the target Alpine architecture. The Dockerfile
+cleans up default `/var/www` content for all platforms.
 
 ### CI / Publishing
 
-The expected workflow is local verification followed by a push to `main`. Main pushes run ShellCheck, Hadolint, amd64 integration tests, and core smoke tests on native amd64 and arm64 runners before publishing. Weekly scheduled runs build fresh no-cache candidates for both architectures, compare reproducible filesystem layers and operational image configuration with `latest`, and skip verification and publishing when both are unchanged. Alpine packages float at build time; GeoIPUpdate and the CrowdSec bouncer are fixed and checksum-verified. GitHub Actions remain pinned to immutable commit SHAs. Published images are tagged as both `latest` and a source/run-specific rollback tag, with SBOM and provenance attestations attached.
+The expected workflow is local verification followed by a direct push to `main`. Main pushes run ShellCheck, Hadolint, amd64 integration tests, and core smoke tests on native amd64 and arm64 runners before publishing. Weekly scheduled runs compare the current upstream base digest with the digest recorded on `latest`, skipping verification and publication when it is unchanged. Alpine packages float at build time; GeoIPUpdate and the CrowdSec bouncer are fixed and checksum-verified. GitHub Actions remain pinned to immutable commit SHAs. Published images are tagged as both `latest` and a source/run-specific rollback tag, with SBOM and provenance attestations attached.

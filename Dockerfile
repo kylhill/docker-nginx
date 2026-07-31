@@ -4,8 +4,7 @@
 ARG BASE_IMAGE=ghcr.io/linuxserver/baseimage-alpine:3.24
 FROM ${BASE_IMAGE}
 
-LABEL maintainer="Kyle Hill" \
-      org.opencontainers.image.title="docker-nginx" \
+LABEL org.opencontainers.image.title="docker-nginx" \
       org.opencontainers.image.description="nginx reverse proxy on linuxserver.io Alpine base image" \
       org.opencontainers.image.url="https://github.com/kylhill/docker-nginx" \
       org.opencontainers.image.source="https://github.com/kylhill/docker-nginx" \
@@ -62,16 +61,14 @@ RUN set -eux; \
     # download and verify the tar.gz for the architecture
     curl -fsSL -o "$GEOIPUPDATE_ARCHIVE" \
       "https://github.com/maxmind/geoipupdate/releases/download/v${GEOIPUPDATE_VERSION}/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${RELEASE_ARCH}.tar.gz"; \
-    echo "${GEOIPUPDATE_SHA256}  ${GEOIPUPDATE_ARCHIVE}" \
-      > "${GEOIPUPDATE_ARCHIVE}.sha256"; \
-    sha256sum -c "${GEOIPUPDATE_ARCHIVE}.sha256"; \
+    echo "${GEOIPUPDATE_SHA256}  ${GEOIPUPDATE_ARCHIVE}" | sha256sum -c -; \
     \
     # extract and install the binary
     tar -xzf "$GEOIPUPDATE_ARCHIVE" -C /tmp; \
     install -m 0755 "$GEOIPUPDATE_DIR/geoipupdate" /usr/local/bin/geoipupdate; \
     \
     # cleanup
-    rm -f "$GEOIPUPDATE_ARCHIVE" "${GEOIPUPDATE_ARCHIVE}.sha256"; \
+    rm -f "$GEOIPUPDATE_ARCHIVE"; \
     rm -rf "$GEOIPUPDATE_DIR"
 
 # Install CrowdSec nginx bouncer
@@ -79,8 +76,8 @@ ARG CROWDSEC_BOUNCER_VERSION=1.2.0
 ARG CROWDSEC_BOUNCER_SHA256=2affbfcdbd3e5175a7c6ecaea021778f72788838ea30e581651edfcaabc4a3b8
 LABEL io.github.kylhill.docker-nginx.geoipupdate.version="${GEOIPUPDATE_VERSION}" \
       io.github.kylhill.docker-nginx.crowdsec-bouncer.version="${CROWDSEC_BOUNCER_VERSION}"
-COPY patches/crowdsec-lua-1.0.14.patch /tmp/crowdsec-lua.patch
-RUN set -eux; \
+RUN --mount=type=bind,source=patches/crowdsec-lua-1.0.14.patch,target=/tmp/crowdsec-lua.patch,ro \
+    set -eux; \
     apk add --no-cache --virtual .crowdsec-build-deps \
       patch; \
     CROWDSEC_ARCHIVE="/tmp/bouncer.tgz"; \
@@ -89,9 +86,7 @@ RUN set -eux; \
     # download, verify, and extract the bouncer tarball
     curl -fsSL -o "$CROWDSEC_ARCHIVE" \
       "https://github.com/crowdsecurity/cs-nginx-bouncer/releases/download/v${CROWDSEC_BOUNCER_VERSION}/crowdsec-nginx-bouncer.tgz"; \
-    echo "${CROWDSEC_BOUNCER_SHA256}  ${CROWDSEC_ARCHIVE}" \
-      > "${CROWDSEC_ARCHIVE}.sha256"; \
-    sha256sum -c "${CROWDSEC_ARCHIVE}.sha256"; \
+    echo "${CROWDSEC_BOUNCER_SHA256}  ${CROWDSEC_ARCHIVE}" | sha256sum -c -; \
     tar -xzf "$CROWDSEC_ARCHIVE" -C /tmp; \
     \
     # Apply the two intentional local behavior fixes without allowing fuzzy
@@ -114,8 +109,7 @@ RUN set -eux; \
       /var/lib/crowdsec/lua/templates/ban.html; \
     \
     # cleanup
-    rm -f "$CROWDSEC_ARCHIVE" "${CROWDSEC_ARCHIVE}.sha256" \
-      /tmp/crowdsec-lua.patch; \
+    rm -f "$CROWDSEC_ARCHIVE"; \
     rm -rf "$CROWDSEC_DIR"; \
     apk del .crowdsec-build-deps; \
     rm -f /var/log/apk.log

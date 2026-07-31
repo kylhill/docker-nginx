@@ -19,7 +19,7 @@ env:
 jobs:
   gate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 10
     permissions:
       contents: read
       packages: read
@@ -30,19 +30,6 @@ jobs:
       base_digest: ${{ steps.base.outputs.base_digest }}
 
     steps:
-      - name: Checkout
-        if: github.event_name == 'schedule'
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-
-      - name: Set up QEMU
-        if: github.event_name == 'schedule'
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
-        with:
-          image: ${{ env.QEMU_IMAGE }}
-          platforms: arm64
-
       - name: Set up Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
         with:
@@ -79,9 +66,8 @@ jobs:
         id: decision
         shell: bash
         env:
-          BASE_IMAGE: ${{ steps.base.outputs.base_image }}@${{ steps.base.outputs.base_digest }}
           PUBLISHED_IMAGE: ghcr.io/${{ github.repository }}:latest
-          SOURCE_DATE_EPOCH: "0"
+          RESOLVED_BASE_DIGEST: ${{ steps.base.outputs.base_digest }}
         run: |
           set -euo pipefail
 
@@ -91,9 +77,13 @@ jobs:
             exit 0
           fi
 
-          error_file="$(mktemp)"
-          if ! docker buildx imagetools inspect "${PUBLISHED_IMAGE}" \
-              >/dev/null 2>"${error_file}"; then
+          error_file="${RUNNER_TEMP}/published-image-error.log"
+          if published_base_digest="$(docker buildx imagetools inspect \
+              "${PUBLISHED_IMAGE}" \
+              --format '{{ index (index .Image "linux/amd64").Config.Labels "org.opencontainers.image.base.digest" }}' \
+              2>"${error_file}")"; then
+            :
+          else
             if grep -Eqi 'manifest unknown|name unknown|not found' "${error_file}"; then
               echo "reason=no published latest image" >> "$GITHUB_OUTPUT"
               echo "should_publish=true" >> "$GITHUB_OUTPUT"
@@ -103,47 +93,16 @@ jobs:
             exit 1
           fi
 
-          changed=false
-          for arch in amd64 arm64; do
-            platform="linux/${arch}"
-            published_tag="docker-nginx:published-${arch}"
-            candidate_tag="docker-nginx:candidate-${arch}"
-
-            docker pull --platform "${platform}" "${PUBLISHED_IMAGE}"
-            docker tag "${PUBLISHED_IMAGE}" "${published_tag}"
-
-            docker buildx build \
-              --platform "${platform}" \
-              --pull \
-              --no-cache \
-              --provenance=false \
-              --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
-              --tag "${candidate_tag}" \
-              --output "type=docker,dest=${RUNNER_TEMP}/candidate-${arch}.tar,rewrite-timestamp=true" \
-              .
-            docker load --input "${RUNNER_TEMP}/candidate-${arch}.tar"
-
-            published_id="$(scripts/image-content-id.sh "${published_tag}")"
-            candidate_id="$(scripts/image-content-id.sh "${candidate_tag}")"
-
-            echo "${arch} published content:"
-            echo "${published_id}"
-            echo "${arch} candidate content:"
-            echo "${candidate_id}"
-
-            if [[ "${published_id}" != "${candidate_id}" ]]; then
-              changed=true
-              echo "${arch} has meaningful image changes."
-            fi
-          done
-
-          if [[ "${changed}" == true ]]; then
-            echo "reason=scheduled image content changed" >> "$GITHUB_OUTPUT"
+          if [[ -z "${published_base_digest}" ]]; then
+            echo "reason=published image has no base digest label" >> "$GITHUB_OUTPUT"
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${published_base_digest}" != "${RESOLVED_BASE_DIGEST}" ]]; then
+            echo "reason=upstream base digest changed" >> "$GITHUB_OUTPUT"
             echo "should_publish=true" >> "$GITHUB_OUTPUT"
           else
-            echo "reason=no meaningful scheduled image changes" >> "$GITHUB_OUTPUT"
+            echo "reason=upstream base digest unchanged" >> "$GITHUB_OUTPUT"
             echo "should_publish=false" >> "$GITHUB_OUTPUT"
-            echo "No meaningful image changes; verification and publication will be skipped."
+            echo "Base image unchanged; verification and publication will be skipped."
           fi
 
       - name: Write gate summary
@@ -214,12 +173,10 @@ jobs:
       - name: Build and push multi-platform image
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        env:
-          SOURCE_DATE_EPOCH: "0"
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          outputs: type=image,push=true,rewrite-timestamp=true
+          push: true
           pull: true
           no-cache: true
           build-args: |
@@ -230,11 +187,9 @@ jobs:
           provenance: mode=max
           sbom: true
           labels: |
-            build_version=docker-nginx version:- ${{ steps.image.outputs.version }} Build-date:- ${{ steps.image.outputs.created }}
             org.opencontainers.image.created=${{ steps.image.outputs.created }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.image.outputs.version }}
-            org.opencontainers.image.ref.name=${{ steps.image.outputs.version }}
             org.opencontainers.image.base.name=${{ needs.gate.outputs.base_image }}
             org.opencontainers.image.base.digest=${{ needs.gate.outputs.base_digest }}
 
@@ -266,17 +221,8 @@ jobs:
               --format "{{ index (index .Image \"${platform}\").Config.Labels \"org.opencontainers.image.base.digest\" }}")"
             version="$(docker buildx imagetools inspect "${VERSION_IMAGE}" \
               --format "{{ index (index .Image \"${platform}\").Config.Labels \"org.opencontainers.image.version\" }}")"
-            ref_name="$(docker buildx imagetools inspect "${VERSION_IMAGE}" \
-              --format "{{ index (index .Image \"${platform}\").Config.Labels \"org.opencontainers.image.ref.name\" }}")"
-            vendor="$(docker buildx imagetools inspect "${VERSION_IMAGE}" \
-              --format "{{ index (index .Image \"${platform}\").Config.Labels \"org.opencontainers.image.vendor\" }}")"
-            build_version="$(docker buildx imagetools inspect "${VERSION_IMAGE}" \
-              --format "{{ index (index .Image \"${platform}\").Config.Labels \"build_version\" }}")"
             test "${base_digest}" = "${EXPECTED_BASE_DIGEST}"
             test "${version}" = "${EXPECTED_VERSION}"
-            test "${ref_name}" = "${EXPECTED_VERSION}"
-            test "${vendor}" = "Kyle Hill"
-            grep -Fq "docker-nginx version:- ${EXPECTED_VERSION}" <<<"${build_version}"
           done
 
           docker buildx imagetools inspect "${VERSION_IMAGE}" \
