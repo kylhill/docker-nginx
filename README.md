@@ -214,9 +214,9 @@ archives are checksum-verified. Alpine packages intentionally float within the
 pinned base release; `APK_REFRESH_DATE` records deliberate package refreshes in
 source control.
 
-The weekly `Dependency update report` workflow uses Renovate as a coverage
-audit and the repository update scripts as the authoritative report. It checks
-all source-controlled pins, builds fresh amd64 and arm64 candidates, and
+The weekly `Dependency update report` workflow uses the repository update
+scripts as its authoritative inventory and report. It checks all
+source-controlled pins, builds fresh amd64 and arm64 candidates, and
 compares their installed Alpine packages with the published `latest` image.
 When updates exist it creates or reopens a single GitHub tracking issue and
 updates its body. When everything is current it closes that issue. Finding an
@@ -255,9 +255,11 @@ APK_COMPARE_ARCHES="amd64 arm64" scripts/check-updates.sh --update
 
 The expected development flow is to run `scripts/verify-image.sh` and
 `scripts/verify-integration.sh` locally, then push directly to `main` on the
-authoritative Forgejo repository. Its GitHub mirror runs linting, fresh native
-amd64 and arm64 verification, and publishes `latest` plus a rollback tag only
-when every check passes.
+authoritative Forgejo repository. The integration cases can be focused locally
+with `TEST_CASES=enabled`, `TEST_CASES=persistence`, or `TEST_CASES=nonroot`;
+the default runs all three. Relevant changes on the GitHub mirror run linting
+and native amd64 and arm64 verification, then publish the exact verified
+digests as `latest` plus `sha-<short-sha>-<run-id>` only when every check passes.
 
 ## Notes
 

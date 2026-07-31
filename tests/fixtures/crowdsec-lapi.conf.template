@@ -1,0 +1,21 @@
+pid /tmp/crowdsec-lapi.pid;
+error_log stderr notice;
+events {}
+http {
+    log_format integration '$request_method $request_uri api_key=$http_x_api_key';
+    access_log /dev/stdout integration;
+
+    server {
+        listen 8080;
+
+        location /v1/decisions/stream {
+            default_type application/json;
+            return 200 '{"new":[{"duration":"1h","origin":"crowdsec","scope":"Ip","type":"ban","value":"@BANNED_IP@"}],"deleted":[]}';
+        }
+
+        location /v1/usage-metrics {
+            default_type application/json;
+            return 200 '{}';
+        }
+    }
+}

@@ -15,14 +15,9 @@ permissions:
   packages: read
 
 env:
-  # renovate: datasource=github-releases depName=docker/buildx
   BUILDX_VERSION: v0.36.0
-  # renovate: datasource=docker depName=moby/buildkit
   BUILDKIT_IMAGE: moby/buildkit:v0.32.0@sha256:1f8167fcb0eca5b7126353d35299386945cbb8949cc516c592a49f80cfce4fa2
-  # renovate: datasource=docker depName=tonistiigi/binfmt
   QEMU_IMAGE: tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
-  # renovate: datasource=docker depName=renovate/renovate
-  RENOVATE_IMAGE: renovate/renovate:44.5.0@sha256:f4deb31a89607be6df150d412408d7957568c057ff66cbc1e6f3a5c519345167
 
 jobs:
   report:
@@ -45,20 +40,6 @@ jobs:
         with:
           version: ${{ env.BUILDX_VERSION }}
           driver-opts: image=${{ env.BUILDKIT_IMAGE }}
-
-      - name: Audit dependency coverage with Renovate
-        run: |
-          docker run --rm \
-            --volume "$PWD:/repo:ro" \
-            --entrypoint renovate-config-validator \
-            "$RENOVATE_IMAGE" /repo/renovate.json
-          docker run --rm \
-            --volume "$PWD:/repo:ro" \
-            --workdir /repo \
-            --env LOG_LEVEL=debug \
-            --entrypoint renovate \
-            "$RENOVATE_IMAGE" \
-            --platform=local --dry-run=extract
 
       - name: Check source-controlled dependencies
         env:

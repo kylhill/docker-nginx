@@ -354,7 +354,7 @@ update_release_checksums() {
 }
 
 audit_inventory() {
-    local known_images='^(moby/buildkit|tonistiigi/binfmt|koalaman/shellcheck|ghcr.io/hadolint/hadolint|renovate/renovate):'
+    local known_images='^(moby/buildkit|tonistiigi/binfmt|koalaman/shellcheck|ghcr.io/hadolint/hadolint|rhysd/actionlint):'
     local ref dockerfile_args expected_dockerfile_args
     while IFS= read -r ref; do
         [[ "${ref}" =~ ${known_images} ]] || {
@@ -442,7 +442,7 @@ update_image_pin moby/buildkit moby/buildkit release
 update_image_pin tonistiigi/binfmt tonistiigi/binfmt qemu-docker-tag
 update_image_pin koalaman/shellcheck koalaman/shellcheck release
 update_image_pin ghcr.io/hadolint/hadolint hadolint/hadolint release-debian
-update_image_pin renovate/renovate renovatebot/renovate release-no-v
+update_image_pin rhysd/actionlint rhysd/actionlint release-no-v
 geoip_version="$(update_release_version GeoIPUpdate maxmind/geoipupdate GEOIPUPDATE_VERSION)"
 crowdsec_version="$(update_release_version CrowdSec crowdsecurity/cs-nginx-bouncer CROWDSEC_BOUNCER_VERSION)"
 update_release_checksums "${geoip_version}" "${crowdsec_version}"

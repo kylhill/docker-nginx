@@ -1,7 +1,6 @@
 # syntax=docker/dockerfile:1@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
 
 # Inspired by https://github.com/linuxserver/docker-baseimage-alpine-nginx/blob/master/Dockerfile
-# renovate: datasource=docker depName=ghcr.io/linuxserver/baseimage-alpine
 ARG BASE_IMAGE=ghcr.io/linuxserver/baseimage-alpine:3.24@sha256:15e4f2ab8c6921ee238e730eb8b53c59e31c99e9b817b6206063c2f24e32cedb
 FROM ${BASE_IMAGE}
 
@@ -49,7 +48,6 @@ RUN set -eux; \
   rm -f /var/log/apk.log;
 
 # Install GeoIPUpdate
-# renovate: datasource=github-releases depName=maxmind/geoipupdate
 ARG GEOIPUPDATE_VERSION=8.0.0
 ARG GEOIPUPDATE_AMD64_SHA256=941eb4dd8c1eafb6ee1d56ccd5f4c62ffbdaca5f65a9f9cadc4008c8d805f2a2
 ARG GEOIPUPDATE_ARM64_SHA256=76cedc3bad8b5f02a3ea42ac84c57d318a758377a07806f7a13189a382f16308
@@ -79,7 +77,6 @@ RUN set -eux; \
     rm -rf "$GEOIPUPDATE_DIR"
 
 # Install CrowdSec nginx bouncer
-# renovate: datasource=github-releases depName=crowdsecurity/cs-nginx-bouncer
 ARG CROWDSEC_BOUNCER_VERSION=1.2.1
 ARG CROWDSEC_BOUNCER_SHA256=ccd9a817e106173979ae7acc358f439e7f30a63283421e95281eaf01529d6bc5
 LABEL io.github.kylhill.docker-nginx.geoipupdate.version="${GEOIPUPDATE_VERSION}" \
