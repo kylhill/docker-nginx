@@ -212,12 +212,16 @@ The LinuxServer base image, Dockerfile frontend, CI helper images, GitHub
 Actions, GeoIPUpdate, and the CrowdSec nginx bouncer are pinned. Release
 archives are checksum-verified. Alpine packages intentionally float within the
 pinned base release; `APK_REFRESH_DATE` records deliberate package refreshes in
-source control.
+source control. `lua-resty-string` is the exception: because its files are
+extracted without installing its OpenResty dependency, its Alpine package
+version is pinned and tracked explicitly.
 
 The weekly `Dependency update report` workflow uses the repository update
 scripts as its authoritative inventory and report. It checks all
 source-controlled pins, builds fresh amd64 and arm64 candidates, and
 compares their installed Alpine packages with the published `latest` image.
+The candidates stop at the `runtime-packages` stage because later image layers
+do not change the final APK inventory.
 When updates exist it creates or reopens a single GitHub tracking issue and
 updates its body. When everything is current it closes that issue. Finding an
 update is informational and does not make the workflow fail or publish an
@@ -240,10 +244,11 @@ scripts/check-updates.sh --update
 
 The command resolves and validates every dependency before applying its queued
 edits. It updates action SHAs and version comments, image tags and digests, the
-base image, release versions and checksums, and `APK_REFRESH_DATE` when a fresh
-package set differs from `latest`. It leaves a reviewable working-tree diff; it
-does not commit, push, or publish. Review that diff and run both verification
-scripts before pushing to `main`.
+base image, the extracted `lua-resty-string` package version, release versions
+and checksums, and `APK_REFRESH_DATE` when a fresh package set differs from
+`latest`. It leaves a reviewable working-tree diff; it does not commit, push,
+or publish. Review that diff and run both verification scripts before pushing
+to `main`.
 
 Local APK comparison defaults to the Docker host's native architecture, so it
 does not require QEMU. The weekly GitHub report checks both amd64 and arm64 on
@@ -259,7 +264,8 @@ authoritative Forgejo repository. The integration cases can be focused locally
 with `TEST_CASES=enabled`, `TEST_CASES=persistence`, or `TEST_CASES=nonroot`;
 the default runs all three. Relevant changes on the GitHub mirror run linting
 and native amd64 and arm64 verification, then publish the exact verified
-digests as `latest` plus `sha-<short-sha>-<run-id>` only when every check passes.
+digests under `sha-<short-sha>-<run-id>`, verify the combined multi-platform
+image, and only then promote that digest to `latest`.
 
 ## Notes
 

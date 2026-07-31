@@ -2,7 +2,7 @@
 
 # Inspired by https://github.com/linuxserver/docker-baseimage-alpine-nginx/blob/master/Dockerfile
 ARG BASE_IMAGE=ghcr.io/linuxserver/baseimage-alpine:3.24@sha256:15e4f2ab8c6921ee238e730eb8b53c59e31c99e9b817b6206063c2f24e32cedb
-FROM ${BASE_IMAGE}
+FROM ${BASE_IMAGE} AS runtime-packages
 
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 
@@ -18,12 +18,14 @@ LABEL org.opencontainers.image.title="docker-nginx" \
 # install packages
 # Records an intentional refresh of the floating Alpine package set.
 ARG APK_REFRESH_DATE=2026-07-31
+ARG LUA_RESTY_STRING_VERSION=0.15-r1
 RUN set -eux; \
   : "${APK_REFRESH_DATE}"; \
   # lua-resty-string declares an OpenResty-specific package dependency even
   # though nginx-mod-http-lua provides the same Lua runtime. Extract the
   # architecture-independent Lua files without installing a second nginx.
   apk fetch --no-cache --no-progress --output /tmp lua-resty-string; \
+  test -f "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk"; \
   apk add --no-cache --no-progress \
     curl \
     lua-resty-http \
@@ -35,8 +37,9 @@ RUN set -eux; \
     nginx-mod-http-lua \
     nginx-mod-http-zstd \
     openssl; \
-  tar -xzf /tmp/lua-resty-string-*.apk -C / usr/share/lua/common; \
-  rm -f /tmp/lua-resty-string-*.apk; \
+  tar -xzf "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk" \
+    -C / usr/share/lua/common; \
+  rm -f "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk"; \
   # Remove default config
   rm -f /etc/nginx/http.d/default.conf; \
   # Alpine stores its module symlink below this directory. Arbitrary-UID
@@ -46,6 +49,10 @@ RUN set -eux; \
   find /var/www -mindepth 1 ! -path /var/www/favicon.ico -exec rm -rf {} +; \
   # apk.log records build timestamps and is not useful at runtime.
   rm -f /var/log/apk.log;
+
+FROM runtime-packages AS final
+
+SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 
 # Install GeoIPUpdate
 ARG GEOIPUPDATE_VERSION=8.0.0

@@ -70,6 +70,7 @@ for arch in "${ARCH_LIST[@]}"; do
         --platform "${platform}" \
         --pull \
         --no-cache \
+        --target runtime-packages \
         --load \
         --tag "${candidate}" \
         "${REPOSITORY_ROOT}" >/dev/null

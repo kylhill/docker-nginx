@@ -286,7 +286,6 @@ jobs:
           done
 
           docker buildx imagetools create \
-            --tag "${IMAGE}:latest" \
             --tag "${IMAGE}:${VERSION}" \
             "${sources[@]}"
           digest="$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" \
@@ -294,10 +293,9 @@ jobs:
           [[ "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]]
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
 
-      - name: Verify published image
+      - name: Verify immutable multi-platform image
         shell: bash
         env:
-          IMAGE: ghcr.io/${{ github.repository }}:latest
           VERSION_IMAGE: ghcr.io/${{ github.repository }}:${{ steps.image.outputs.version }}
           EXPECTED_DIGEST: ${{ steps.publish.outputs.digest }}
           EXPECTED_BASE_DIGEST: ${{ steps.image.outputs.base_digest }}
@@ -305,11 +303,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          latest_digest="$(docker buildx imagetools inspect "${IMAGE}" \
-            --format '{{json .Manifest}}' | jq -er '.digest')"
           version_digest="$(docker buildx imagetools inspect "${VERSION_IMAGE}" \
             --format '{{json .Manifest}}' | jq -er '.digest')"
-          test "${latest_digest}" = "${EXPECTED_DIGEST}"
           test "${version_digest}" = "${EXPECTED_DIGEST}"
 
           manifest="$(docker buildx imagetools inspect "${VERSION_IMAGE}")"
@@ -332,6 +327,20 @@ jobs:
             --format '{{json .SBOM}}' > "${RUNNER_TEMP}/sbom.json"
           grep -q '"SLSA"' "${RUNNER_TEMP}/provenance.json"
           grep -q '"SPDX"' "${RUNNER_TEMP}/sbom.json"
+
+      - name: Promote verified image to latest
+        shell: bash
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          EXPECTED_DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            --tag "${IMAGE}:latest" \
+            "${IMAGE}@${EXPECTED_DIGEST}"
+          latest_digest="$(docker buildx imagetools inspect "${IMAGE}:latest" \
+            --format '{{json .Manifest}}' | jq -er '.digest')"
+          test "${latest_digest}" = "${EXPECTED_DIGEST}"
 
       - name: Prune GHCR package versions (keep 20)
         uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5.0.0

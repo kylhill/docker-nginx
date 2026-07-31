@@ -79,10 +79,20 @@ fi
 
 latest_github_tag_version() {
     local repository="$1"
-    curl "${GITHUB_CURL_ARGS[@]}" \
-        "https://api.github.com/repos/${repository}/tags?per_page=100" \
-        | jq -r '.[].name' \
-        | sed -nE '/^v?[0-9]+(\.[0-9]+){1,3}$/p' \
+    local body count page=1
+    local tags_file="${TEMP_DIR}/github-tags-${repository//\//_}"
+    : > "${tags_file}"
+
+    while :; do
+        body="$(curl "${GITHUB_CURL_ARGS[@]}" \
+            "https://api.github.com/repos/${repository}/tags?per_page=100&page=${page}")"
+        count="$(jq 'length' <<< "${body}")"
+        jq -r '.[].name' <<< "${body}" >> "${tags_file}"
+        ((count == 100)) || break
+        ((page++))
+    done
+
+    sed -nE '/^v?[0-9]+(\.[0-9]+){1,3}$/p' "${tags_file}" \
         | awk '{ normalized = $0; sub(/^v/, "", normalized); print normalized "\t" $0 }' \
         | sort -t $'\t' -k1,1V \
         | tail -n1 | cut -f2
@@ -352,6 +362,7 @@ update_base_image() {
     current_tag="${current_tag%@sha256:*}"
     current_digest="sha256:${current_ref##*@sha256:}"
     latest_tag="$(latest_linuxserver_tag)"
+    LATEST_BASE_IMAGE_TAG="${latest_tag}"
     assert_not_downgrade ghcr.io/linuxserver/baseimage-alpine \
         "${current_tag}" "${latest_tag}"
     latest_digest="$(image_digest "ghcr.io/linuxserver/baseimage-alpine:${latest_tag}")"
@@ -361,6 +372,60 @@ update_base_image() {
     if [[ "${MODE}" == --update && "${current_ref}" != "${latest_ref}" ]]; then
         queue_replacement "ARG BASE_IMAGE=${current_ref}" \
             "ARG BASE_IMAGE=${latest_ref}" "${DOCKERFILE}"
+    fi
+}
+
+latest_alpine_package_version() {
+    local branch="$1" repository="$2" package="$3"
+    local arch archive version
+    local versions_file="${TEMP_DIR}/alpine-${package}-versions"
+    : > "${versions_file}"
+
+    for arch in x86_64 aarch64; do
+        archive="${TEMP_DIR}/alpine-${branch}-${repository}-${arch}.tar.gz"
+        curl "${CURL_ARGS[@]}" --output "${archive}" \
+            "https://dl-cdn.alpinelinux.org/alpine/v${branch}/${repository}/${arch}/APKINDEX.tar.gz"
+        version="$(tar -xOzf "${archive}" APKINDEX | awk -v package="${package}" '
+            BEGIN { RS = ""; FS = "\n" }
+            {
+                name = version = ""
+                for (field = 1; field <= NF; field++) {
+                    if ($field == "P:" package) name = package
+                    if ($field ~ /^V:/) version = substr($field, 3)
+                }
+                if (name == package && version != "") {
+                    print version
+                    exit
+                }
+            }
+        ')"
+        [[ -n "${version}" ]] || {
+            echo "Unable to find ${package} for Alpine ${branch}/${repository}/${arch}." >&2
+            exit 1
+        }
+        printf '%s\n' "${version}" >> "${versions_file}"
+    done
+
+    version="$(sort -u "${versions_file}")"
+    [[ "$(wc -l <<< "${version}")" -eq 1 ]] || {
+        echo "Alpine package versions differ by architecture for ${package}:" >&2
+        cat "${versions_file}" >&2
+        exit 1
+    }
+    printf '%s\n' "${version}"
+}
+
+update_alpine_package_version() {
+    local package="$1" variable="$2" repository="$3"
+    local current latest
+    current="$(dockerfile_arg "${variable}")"
+    latest="$(latest_alpine_package_version \
+        "${LATEST_BASE_IMAGE_TAG}" "${repository}" "${package}")"
+    assert_not_downgrade "${package}" "${current}" "${latest}"
+    record apk "${package}" "${current}" "${latest}"
+    if [[ "${MODE}" == --update && "${current}" != "${latest}" ]]; then
+        queue_replacement "ARG ${variable}=${current}" \
+            "ARG ${variable}=${latest}" "${DOCKERFILE}"
     fi
 }
 
@@ -537,6 +602,8 @@ update_action_pins
 update_buildx
 update_dockerfile_frontend
 update_base_image
+update_alpine_package_version \
+    lua-resty-string LUA_RESTY_STRING_VERSION community
 update_image_pin moby/buildkit moby/buildkit release
 update_image_pin koalaman/shellcheck koalaman/shellcheck release
 update_image_pin ghcr.io/hadolint/hadolint hadolint/hadolint release-debian
