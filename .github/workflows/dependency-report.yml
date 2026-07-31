@@ -2,7 +2,7 @@ name: Dependency update report
 
 on:
   schedule:
-    - cron: "0 9 * * 1"
+    - cron: "17 9 * * 1"
   workflow_dispatch:
 
 concurrency:
@@ -11,29 +11,20 @@ concurrency:
 
 permissions:
   contents: read
-  issues: write
-  packages: read
 
 env:
   BUILDX_VERSION: v0.36.0
   BUILDKIT_IMAGE: moby/buildkit:v0.32.0@sha256:1f8167fcb0eca5b7126353d35299386945cbb8949cc516c592a49f80cfce4fa2
-  QEMU_IMAGE: tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
 
 jobs:
-  report:
+  source-dependencies:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
-        with:
-          image: ${{ env.QEMU_IMAGE }}
-          platforms: arm64
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
@@ -46,20 +37,87 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: scripts/check-updates.sh --check --format markdown > "$RUNNER_TEMP/source-dependencies.md"
 
+      - name: Upload source dependency report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-report-source
+          path: ${{ runner.temp }}/source-dependencies.md
+          if-no-files-found: error
+          retention-days: 1
+
+  apk-packages:
+    name: Compare Alpine packages (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+          driver-opts: image=${{ env.BUILDKIT_IMAGE }}
+
       - name: Compare floating Alpine packages
         env:
-          ARCHES: amd64 arm64
-        run: scripts/compare-apk-packages.sh > "$RUNNER_TEMP/apk-packages.md"
+          ARCHES: ${{ matrix.arch }}
+        run: scripts/compare-apk-packages.sh > "$RUNNER_TEMP/apk-packages-${{ matrix.arch }}.md"
+
+      - name: Upload Alpine package report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-report-apk-${{ matrix.arch }}
+          path: ${{ runner.temp }}/apk-packages-${{ matrix.arch }}.md
+          if-no-files-found: error
+          retention-days: 1
+
+  report:
+    needs: [source-dependencies, apk-packages]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Download report fragments
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: dependency-report-*
+          path: ${{ runner.temp }}/report-fragments
+          merge-multiple: true
 
       - name: Build report
         run: |
+          set -euo pipefail
+          fragments="$RUNNER_TEMP/report-fragments"
+          apk_updates=false
+          if grep -q '<!-- apk-updates-available:true -->' \
+              "${fragments}"/apk-packages-*.md; then
+            apk_updates=true
+          fi
           {
             echo "<!-- docker-nginx-dependency-report -->"
             echo "Last checked: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
             echo
-            cat "$RUNNER_TEMP/source-dependencies.md"
+            cat "${fragments}/source-dependencies.md"
             echo
-            cat "$RUNNER_TEMP/apk-packages.md"
+            echo "<!-- apk-updates-available:${apk_updates} -->"
+            sed '/^<!-- apk-updates-available:/d' \
+              "${fragments}/apk-packages-amd64.md"
+            echo
+            sed -n '/^### `linux\/arm64`/,$p' \
+              "${fragments}/apk-packages-arm64.md"
             echo
             echo "Apply every available update locally with:"
             echo '```bash'

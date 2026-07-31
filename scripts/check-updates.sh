@@ -46,6 +46,14 @@ fi
 TEMP_DIR="$(mktemp -d)"
 RECORDS_FILE="${TEMP_DIR}/records.tsv"
 touch "${RECORDS_FILE}"
+mapfile -d '' WORKFLOW_FILES < <(
+    find "${WORKFLOW_DIR}" -type f \
+        \( -name '*.yml' -o -name '*.yaml' \) -print0 | sort -z
+)
+((${#WORKFLOW_FILES[@]} > 0)) || {
+    echo "No GitHub Actions workflows found." >&2
+    exit 1
+}
 cleanup() {
     rm -rf "${TEMP_DIR}"
 }
@@ -60,22 +68,47 @@ CURL_ARGS=(
     --retry-all-errors
     --retry-delay 2
     --retry-max-time 60
+    --connect-timeout 15
 )
 GITHUB_CURL_ARGS=("${CURL_ARGS[@]}")
+GITHUB_CURL_ARGS+=(
+    --header "Accept: application/vnd.github+json"
+    --header "X-GitHub-Api-Version: 2022-11-28"
+)
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
     GITHUB_CURL_ARGS+=(--header "Authorization: Bearer ${GITHUB_TOKEN}")
 fi
 
-latest_github_version() {
+latest_github_tag_version() {
     local repository="$1"
-    local latest
-    latest="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags --refs \
+    GIT_TERMINAL_PROMPT=0 git ls-remote --tags --refs \
         "https://github.com/${repository}.git" \
         | awk '{ sub("refs/tags/", "", $2); print $2 }' \
         | sed -nE '/^v?[0-9]+(\.[0-9]+){1,3}$/p' \
         | awk '{ normalized = $0; sub(/^v/, "", normalized); print normalized "\t" $0 }' \
         | sort -t $'\t' -k1,1V \
-        | tail -n1 | cut -f2)"
+        | tail -n1 | cut -f2
+}
+
+latest_github_version() {
+    local repository="$1"
+    local body latest=
+
+    # This project publishes newer stable tags without creating GitHub releases.
+    if [[ "${repository}" == crowdsecurity/cs-nginx-bouncer ]]; then
+        latest="$(latest_github_tag_version "${repository}")"
+    elif body="$(curl "${GITHUB_CURL_ARGS[@]}" \
+        "https://api.github.com/repos/${repository}/releases/latest")"; then
+        latest="$(jq -er '
+            .tag_name
+            | select(test("^v?[0-9]+(\\.[0-9]+){1,3}$"))
+        ' <<< "${body}")" || true
+    fi
+
+    if [[ -z "${latest}" ]]; then
+        echo "GitHub release metadata unavailable for ${repository}; falling back to tags." >&2
+        latest="$(latest_github_tag_version "${repository}")"
+    fi
     [[ -n "${latest}" ]] || {
         echo "Unable to find a stable release tag for ${repository}." >&2
         exit 1
@@ -104,17 +137,21 @@ resolve_tag_sha() {
 }
 
 image_digest() {
-    local image_ref="$1"
+    local image_ref="$1" digest
     [[ "${image_ref}" != *$'\n'* && "${image_ref}" == *:* ]] || {
         echo "Invalid image reference generated for update check: ${image_ref}" >&2
         exit 1
     }
-    if ! docker buildx imagetools inspect "${image_ref}" \
-        | sed -n 's/^Digest:[[:space:]]*//p' | head -n1
-    then
+    if ! digest="$(docker buildx imagetools inspect "${image_ref}" \
+        --format '{{json .Manifest}}' | jq -er '.digest')"; then
         echo "Unable to inspect image pin: ${image_ref}" >&2
         return 1
     fi
+    [[ "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+        echo "Registry returned an invalid digest for ${image_ref}: ${digest}" >&2
+        return 1
+    }
+    printf '%s\n' "${digest}"
 }
 
 record() {
@@ -126,10 +163,20 @@ record() {
         >> "${RECORDS_FILE}"
 }
 
-replace_all() {
-    local pattern="$1" replacement="$2"
+replace_literal() {
+    local search="$1" replacement="$2" escaped_search escaped_replacement
     shift 2
-    sed -i -E "s|${pattern}|${replacement}|g" "$@"
+    [[ "${search}" != *$'\n'* && "${replacement}" != *$'\n'* ]] || {
+        echo "Refusing to replace a multiline value." >&2
+        exit 1
+    }
+    escaped_search="$(printf '%s' "${search}" | sed 's/[][\\.^$*+?(){}|]/\\&/g')"
+    escaped_replacement="$(printf '%s' "${replacement}" | sed 's/[&|\\]/\\&/g')"
+    grep -Fq -- "${search}" "$@" || {
+        echo "Unable to find the exact value to replace: ${search}" >&2
+        exit 1
+    }
+    sed -i -E "s|${escaped_search}|${escaped_replacement}|g" "$@"
 }
 
 dockerfile_arg() {
@@ -163,14 +210,6 @@ latest_linuxserver_tag() {
         | sort -V | tail -n1
 }
 
-latest_binfmt_tag() {
-    curl "${CURL_ARGS[@]}" \
-        'https://hub.docker.com/v2/repositories/tonistiigi/binfmt/tags?page_size=100' \
-        | jq -r '.results[].name' \
-        | sed -nE '/^qemu-v[0-9]+\.[0-9]+\.[0-9]+$/p' \
-        | sort -V | tail -n1
-}
-
 latest_dockerfile_major_tag() {
     curl "${CURL_ARGS[@]}" \
         'https://hub.docker.com/v2/repositories/docker/dockerfile/tags?page_size=100' \
@@ -193,13 +232,13 @@ update_action_pins() {
         latest_sha="$(resolve_tag_sha "${repository}" "${latest_tag}")"
         record action "${repository}" "${current_tag}@${current_sha}" "${latest_tag}@${latest_sha}"
         if [[ "${MODE}" == --update && "${current_sha}" != "${latest_sha}" ]]; then
-            replace_all \
-                "(${repository}@)[a-f0-9]{40}([[:space:]]*#[[:space:]]*)[^[:space:]]+" \
-                "\\1${latest_sha}\\2${latest_tag}" \
-                "${WORKFLOW_DIR}"/*.yml
+            replace_literal \
+                "${repository}@${current_sha} # ${current_tag}" \
+                "${repository}@${latest_sha} # ${latest_tag}" \
+                "${WORKFLOW_FILES[@]}"
         fi
-    done < <(grep -rhE 'uses:[[:space:]]+[^./][^@[:space:]]+@[a-f0-9]{40}' \
-        "${WORKFLOW_DIR}" | sort -u)
+    done < <(grep -hE 'uses:[[:space:]]+[^./][^@[:space:]]+@[a-f0-9]{40}' \
+        "${WORKFLOW_FILES[@]}" | sort -u)
 }
 
 update_release_version() {
@@ -210,7 +249,8 @@ update_release_version() {
     normalized="${latest#v}"
     record release "${name}" "${current}" "${normalized}"
     if [[ "${MODE}" == --update && "${current}" != "${normalized}" ]]; then
-        replace_all "^(ARG ${variable}=).*" "\\1${normalized}" "${DOCKERFILE}"
+        replace_literal "ARG ${variable}=${current}" \
+            "ARG ${variable}=${normalized}" "${DOCKERFILE}"
     fi
     printf '%s\n' "${normalized}"
 }
@@ -218,7 +258,7 @@ update_release_version() {
 update_buildx() {
     local current latest
     current="$(sed -nE 's/^[[:space:]]*BUILDX_VERSION:[[:space:]]*//p' \
-        "${WORKFLOW_DIR}"/*.yml | sort -u)"
+        "${WORKFLOW_FILES[@]}" | sort -u)"
     [[ "$(wc -l <<<"${current}")" -eq 1 ]] || {
         echo "BUILDX_VERSION pins are inconsistent." >&2
         exit 1
@@ -226,17 +266,17 @@ update_buildx() {
     latest="$(latest_github_version docker/buildx)"
     record release docker/buildx "${current}" "${latest}"
     if [[ "${MODE}" == --update && "${current}" != "${latest}" ]]; then
-        replace_all "(BUILDX_VERSION:[[:space:]]*).*" "\\1${latest}" \
-            "${WORKFLOW_DIR}"/*.yml
+        replace_literal "BUILDX_VERSION: ${current}" \
+            "BUILDX_VERSION: ${latest}" "${WORKFLOW_FILES[@]}"
     fi
 }
 
 update_image_pin() {
     local name="$1" source_repository="$2" tag_template="$3"
     local current_ref current_tag current_digest release_tag latest_tag latest_digest latest_ref
-    current_ref="$(grep -rhEo \
+    current_ref="$(grep -hEo \
         "${name}:[^[:space:]]+@sha256:[a-f0-9]{64}" \
-        "${WORKFLOW_DIR}" | sort -u)"
+        "${WORKFLOW_FILES[@]}" | sort -u)"
     [[ -n "${current_ref}" && "$(wc -l <<<"${current_ref}")" -eq 1 ]] || {
         echo "Missing or inconsistent image pin for ${name}." >&2
         exit 1
@@ -253,7 +293,6 @@ update_image_pin() {
             release_tag="$(latest_github_version "${source_repository}")"
             latest_tag="${release_tag#v}"
             ;;
-        qemu-docker-tag) latest_tag="$(latest_binfmt_tag)" ;;
         release-debian)
             release_tag="$(latest_github_version "${source_repository}")"
             latest_tag="${release_tag}-debian"
@@ -264,7 +303,7 @@ update_image_pin() {
     latest_ref="${name}:${latest_tag}@${latest_digest}"
     record image "${name}" "${current_tag}@${current_digest}" "${latest_tag}@${latest_digest}"
     if [[ "${MODE}" == --update && "${current_ref}" != "${latest_ref}" ]]; then
-        replace_all "${current_ref}" "${latest_ref}" "${WORKFLOW_DIR}"/*.yml
+        replace_literal "${current_ref}" "${latest_ref}" "${WORKFLOW_FILES[@]}"
     fi
 }
 
@@ -284,7 +323,8 @@ update_base_image() {
     record image ghcr.io/linuxserver/baseimage-alpine \
         "${current_tag}@${current_digest}" "${latest_tag}@${latest_digest}"
     if [[ "${MODE}" == --update && "${current_ref}" != "${latest_ref}" ]]; then
-        replace_all "^(ARG BASE_IMAGE=).*" "\\1${latest_ref}" "${DOCKERFILE}"
+        replace_literal "ARG BASE_IMAGE=${current_ref}" \
+            "ARG BASE_IMAGE=${latest_ref}" "${DOCKERFILE}"
     fi
 }
 
@@ -303,7 +343,7 @@ update_dockerfile_frontend() {
         "${current_tag}@${current_digest}" "${latest_tag}@${latest_digest}"
     if [[ "${MODE}" == --update ]] &&
         [[ "${current_tag}@${current_digest}" != "${latest_tag}@${latest_digest}" ]]; then
-        replace_all '^# syntax=docker/dockerfile:[0-9]+@sha256:[a-f0-9]{64}$' \
+        replace_literal "${line}" \
             "# syntax=docker/dockerfile:${latest_tag}@${latest_digest}" "${DOCKERFILE}"
     fi
 }
@@ -347,30 +387,36 @@ update_release_checksums() {
         -d "${source_dir}/lua-mod/lib" < "${PATCH_FILE}" >/dev/null
 
     if [[ "${MODE}" == --update ]]; then
-        replace_all '^(ARG GEOIPUPDATE_AMD64_SHA256=).*' "\\1${geo_amd_sha}" "${DOCKERFILE}"
-        replace_all '^(ARG GEOIPUPDATE_ARM64_SHA256=).*' "\\1${geo_arm_sha}" "${DOCKERFILE}"
-        replace_all '^(ARG CROWDSEC_BOUNCER_SHA256=).*' "\\1${crowdsec_sha}" "${DOCKERFILE}"
+        replace_literal \
+            "ARG GEOIPUPDATE_AMD64_SHA256=$(dockerfile_arg GEOIPUPDATE_AMD64_SHA256)" \
+            "ARG GEOIPUPDATE_AMD64_SHA256=${geo_amd_sha}" "${DOCKERFILE}"
+        replace_literal \
+            "ARG GEOIPUPDATE_ARM64_SHA256=$(dockerfile_arg GEOIPUPDATE_ARM64_SHA256)" \
+            "ARG GEOIPUPDATE_ARM64_SHA256=${geo_arm_sha}" "${DOCKERFILE}"
+        replace_literal \
+            "ARG CROWDSEC_BOUNCER_SHA256=$(dockerfile_arg CROWDSEC_BOUNCER_SHA256)" \
+            "ARG CROWDSEC_BOUNCER_SHA256=${crowdsec_sha}" "${DOCKERFILE}"
     fi
 }
 
 audit_inventory() {
-    local known_images='^(moby/buildkit|tonistiigi/binfmt|koalaman/shellcheck|ghcr.io/hadolint/hadolint|rhysd/actionlint):'
+    local known_images='^(moby/buildkit|koalaman/shellcheck|ghcr.io/hadolint/hadolint|rhysd/actionlint):'
     local ref dockerfile_args expected_dockerfile_args
     while IFS= read -r ref; do
         [[ "${ref}" =~ ${known_images} ]] || {
             echo "Unmanaged workflow image pin: ${ref}" >&2
             exit 1
         }
-    done < <(grep -rhEo '[[:alnum:]./_-]+:[^[:space:]]+@sha256:[a-f0-9]{64}' \
-        "${WORKFLOW_DIR}" | sort -u)
+    done < <(grep -hEo '[[:alnum:]./_-]+:[^[:space:]]+@sha256:[a-f0-9]{64}' \
+        "${WORKFLOW_FILES[@]}" | sort -u)
 
     while IFS= read -r ref; do
         [[ "${ref}" =~ @[a-f0-9]{40}$ ]] || {
             echo "External GitHub Action is not pinned to a commit SHA: ${ref}" >&2
             exit 1
         }
-    done < <(grep -rhEo 'uses:[[:space:]]+[^./][^[:space:]]+' \
-        "${WORKFLOW_DIR}" | sed -E 's/^uses:[[:space:]]+//' | sort -u)
+    done < <(grep -hEo 'uses:[[:space:]]+[^./][^[:space:]]+' \
+        "${WORKFLOW_FILES[@]}" | sed -E 's/^uses:[[:space:]]+//' | sort -u)
 
     dockerfile_args="$(sed -nE 's/^ARG ([A-Z0-9_]+)=.*/\1/p' \
         "${DOCKERFILE}" | sort)"
@@ -392,12 +438,14 @@ audit_inventory() {
 
 compare_apk_and_refresh() {
     [[ "${MODE}" == --update && "${SKIP_APK_CHECK}" != 1 ]] || return 0
-    local apk_report="${TEMP_DIR}/apk-report.md"
+    local apk_report="${TEMP_DIR}/apk-report.md" current_refresh
     PUBLISHED_IMAGE="${PUBLISHED_IMAGE}" \
         "${REPOSITORY_ROOT}/scripts/compare-apk-packages.sh" > "${apk_report}"
     if grep -q '<!-- apk-updates-available:true -->' "${apk_report}"; then
         record apk floating-packages changed refresh-required
-        replace_all '^(ARG APK_REFRESH_DATE=).*' "\\1$(date -u +%F)" "${DOCKERFILE}"
+        current_refresh="$(dockerfile_arg APK_REFRESH_DATE)"
+        replace_literal "ARG APK_REFRESH_DATE=${current_refresh}" \
+            "ARG APK_REFRESH_DATE=$(date -u +%F)" "${DOCKERFILE}"
     else
         record apk floating-packages current current
     fi
@@ -439,7 +487,6 @@ update_buildx
 update_dockerfile_frontend
 update_base_image
 update_image_pin moby/buildkit moby/buildkit release
-update_image_pin tonistiigi/binfmt tonistiigi/binfmt qemu-docker-tag
 update_image_pin koalaman/shellcheck koalaman/shellcheck release
 update_image_pin ghcr.io/hadolint/hadolint hadolint/hadolint release-debian
 update_image_pin rhysd/actionlint rhysd/actionlint release-no-v

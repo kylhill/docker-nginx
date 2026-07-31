@@ -11,7 +11,7 @@ on:
       - patches/**
       - scripts/**
       - tests/**
-      - .github/workflows/docker-publish.yml
+      - .github/workflows/**
   workflow_dispatch:
 
 concurrency:
@@ -22,6 +22,7 @@ permissions:
   contents: read
 
 env:
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
   BUILDX_VERSION: v0.36.0
   BUILDKIT_IMAGE: moby/buildkit:v0.32.0@sha256:1f8167fcb0eca5b7126353d35299386945cbb8949cc516c592a49f80cfce4fa2
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
@@ -46,29 +47,40 @@ jobs:
             | xargs -0 grep -IlZ '^#!' \
             | sort -z \
             | xargs -0 --no-run-if-empty docker run --rm \
+                --network none \
+                --read-only \
+                --cap-drop ALL \
+                --security-opt no-new-privileges=true \
                 --volume "$PWD:/repo:ro" \
                 --workdir /repo \
                 "$SHELLCHECK_IMAGE"
 
       - name: Hadolint
         run: |
-          docker run --rm \
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges=true \
             --volume "$PWD:/repo:ro" \
             --workdir /repo \
             "$HADOLINT_IMAGE" hadolint Dockerfile
 
       - name: Actionlint
+        shell: bash
         run: |
+          set -euo pipefail
+          mapfile -d '' workflow_files < <(
+            find .github/workflows -type f \
+              \( -name '*.yml' -o -name '*.yaml' \) -print0 | sort -z
+          )
+          ((${#workflow_files[@]} > 0))
           docker run --rm --network none --read-only --cap-drop ALL \
             --security-opt no-new-privileges=true \
             --volume "$PWD/.github/workflows:/repo/.github/workflows:ro" \
             --workdir /repo \
-            "$ACTIONLINT_IMAGE" \
-            .github/workflows/dependency-report.yml \
-            .github/workflows/docker-publish.yml
+            "$ACTIONLINT_IMAGE" "${workflow_files[@]}"
 
   verify:
     name: Verify (${{ matrix.arch }})
+    needs: lint
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
@@ -133,7 +145,7 @@ jobs:
           pull: true
           outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=docker-nginx-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=docker-nginx-${{ matrix.arch }}
+          cache-to: type=gha,mode=min,scope=docker-nginx-${{ matrix.arch }},timeout=2m,ignore-error=true
           provenance: mode=max
           sbom: true
           labels: |
@@ -152,6 +164,10 @@ jobs:
           set -euo pipefail
           docker pull --platform "${{ matrix.platform }}" "${IMAGE_NAME}@${DIGEST}"
           docker tag "${IMAGE_NAME}@${DIGEST}" "${LOCAL_IMAGE}"
+
+      - name: Remove registry credentials
+        if: always()
+        run: docker logout ghcr.io
 
       - name: Confirm loaded architecture
         shell: bash
@@ -271,7 +287,7 @@ jobs:
             --tag "${IMAGE}:${VERSION}" \
             "${sources[@]}"
           digest="$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" \
-            | sed -n 's/^Digest:[[:space:]]*//p' | head -n1)"
+            --format '{{json .Manifest}}' | jq -er '.digest')"
           [[ "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]]
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
 
@@ -287,9 +303,9 @@ jobs:
           set -euo pipefail
 
           latest_digest="$(docker buildx imagetools inspect "${IMAGE}" \
-            | sed -n 's/^Digest:[[:space:]]*//p' | head -n1)"
+            --format '{{json .Manifest}}' | jq -er '.digest')"
           version_digest="$(docker buildx imagetools inspect "${VERSION_IMAGE}" \
-            | sed -n 's/^Digest:[[:space:]]*//p' | head -n1)"
+            --format '{{json .Manifest}}' | jq -er '.digest')"
           test "${latest_digest}" = "${EXPECTED_DIGEST}"
           test "${version_digest}" = "${EXPECTED_DIGEST}"
 

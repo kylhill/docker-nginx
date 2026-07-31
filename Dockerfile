@@ -64,7 +64,8 @@ RUN set -eux; \
     GEOIPUPDATE_DIR="/tmp/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${RELEASE_ARCH}"; \
     \
     # download and verify the tar.gz for the architecture
-    curl -fsSL -o "$GEOIPUPDATE_ARCHIVE" \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
+      --connect-timeout 15 -o "$GEOIPUPDATE_ARCHIVE" \
       "https://github.com/maxmind/geoipupdate/releases/download/v${GEOIPUPDATE_VERSION}/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${RELEASE_ARCH}.tar.gz"; \
     echo "${GEOIPUPDATE_SHA256}  ${GEOIPUPDATE_ARCHIVE}" | sha256sum -c -; \
     \
@@ -89,7 +90,8 @@ RUN --mount=type=bind,source=patches/crowdsec-lua.patch,target=/tmp/crowdsec-lua
     CROWDSEC_DIR="/tmp/crowdsec-nginx-bouncer-v${CROWDSEC_BOUNCER_VERSION}"; \
     \
     # download, verify, and extract the bouncer tarball
-    curl -fsSL -o "$CROWDSEC_ARCHIVE" \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
+      --connect-timeout 15 -o "$CROWDSEC_ARCHIVE" \
       "https://github.com/crowdsecurity/cs-nginx-bouncer/releases/download/v${CROWDSEC_BOUNCER_VERSION}/crowdsec-nginx-bouncer.tgz"; \
     echo "${CROWDSEC_BOUNCER_SHA256}  ${CROWDSEC_ARCHIVE}" | sha256sum -c -; \
     tar -xzf "$CROWDSEC_ARCHIVE" -C /tmp; \
