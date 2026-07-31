@@ -55,6 +55,9 @@ jobs:
                 --workdir /repo \
                 "$SHELLCHECK_IMAGE"
 
+      - name: Verify dependency pins
+        run: scripts/verify-pins.sh
+
       - name: Hadolint
         run: |
           docker run --rm --network none --read-only --cap-drop ALL \

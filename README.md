@@ -238,16 +238,16 @@ Apply every available update, including major releases, with one command:
 scripts/check-updates.sh --update
 ```
 
-The command updates action SHAs and version comments, image tags and digests,
-the base image, release versions and checksums, and `APK_REFRESH_DATE` when a
-fresh package set differs from `latest`. It leaves a reviewable working-tree
-diff; it does not commit, push, or publish. Review that diff and run both
-verification scripts before pushing to `main`.
+The command resolves and validates every dependency before applying its queued
+edits. It updates action SHAs and version comments, image tags and digests, the
+base image, release versions and checksums, and `APK_REFRESH_DATE` when a fresh
+package set differs from `latest`. It leaves a reviewable working-tree diff; it
+does not commit, push, or publish. Review that diff and run both verification
+scripts before pushing to `main`.
 
 Local APK comparison defaults to the Docker host's native architecture, so it
-does not require QEMU. The weekly GitHub report explicitly checks both amd64
-and arm64 after installing emulation. To check both locally after configuring
-binfmt/QEMU, run:
+does not require QEMU. The weekly GitHub report checks both amd64 and arm64 on
+native runners. To check both locally after configuring binfmt/QEMU, run:
 
 ```bash
 APK_COMPARE_ARCHES="amd64 arm64" scripts/check-updates.sh --update

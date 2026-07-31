@@ -30,22 +30,20 @@ case "${FORMAT}" in
     *) echo "Unsupported format: ${FORMAT}" >&2; exit 2 ;;
 esac
 
-for command in curl docker git grep jq patch sed sha256sum sort tar; do
+for command in curl docker grep jq patch sed sha256sum sort tar; do
     command -v "${command}" >/dev/null || {
         echo "Required command not found: ${command}" >&2
         exit 1
     }
 done
-
-if [[ "${MODE}" == --update && "${UPDATE_PREFLIGHT_DONE:-0}" != 1 ]]; then
-    echo "Preflighting every update source before editing files..." >&2
-    UPDATE_PREFLIGHT_DONE=1 SKIP_APK_CHECK=1 \
-        "${BASH_SOURCE[0]}" --check --format text >/dev/null
-fi
+"${REPOSITORY_ROOT}/scripts/verify-pins.sh"
 
 TEMP_DIR="$(mktemp -d)"
 RECORDS_FILE="${TEMP_DIR}/records.tsv"
 touch "${RECORDS_FILE}"
+declare -a REPLACEMENT_FILES=()
+declare -a REPLACEMENT_SEARCHES=()
+declare -a REPLACEMENT_VALUES=()
 mapfile -d '' WORKFLOW_FILES < <(
     find "${WORKFLOW_DIR}" -type f \
         \( -name '*.yml' -o -name '*.yaml' \) -print0 | sort -z
@@ -73,7 +71,7 @@ CURL_ARGS=(
 GITHUB_CURL_ARGS=("${CURL_ARGS[@]}")
 GITHUB_CURL_ARGS+=(
     --header "Accept: application/vnd.github+json"
-    --header "X-GitHub-Api-Version: 2022-11-28"
+    --header "X-GitHub-Api-Version: 2026-03-10"
 )
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
     GITHUB_CURL_ARGS+=(--header "Authorization: Bearer ${GITHUB_TOKEN}")
@@ -81,9 +79,9 @@ fi
 
 latest_github_tag_version() {
     local repository="$1"
-    GIT_TERMINAL_PROMPT=0 git ls-remote --tags --refs \
-        "https://github.com/${repository}.git" \
-        | awk '{ sub("refs/tags/", "", $2); print $2 }' \
+    curl "${GITHUB_CURL_ARGS[@]}" \
+        "https://api.github.com/repos/${repository}/tags?per_page=100" \
+        | jq -r '.[].name' \
         | sed -nE '/^v?[0-9]+(\.[0-9]+){1,3}$/p' \
         | awk '{ normalized = $0; sub(/^v/, "", normalized); print normalized "\t" $0 }' \
         | sort -t $'\t' -k1,1V \
@@ -92,25 +90,28 @@ latest_github_tag_version() {
 
 latest_github_version() {
     local repository="$1"
-    local body latest=
+    local strategy="$2"
+    local body latest='' cache_file
 
-    # This project publishes newer stable tags without creating GitHub releases.
-    if [[ "${repository}" == crowdsecurity/cs-nginx-bouncer ]]; then
-        latest="$(latest_github_tag_version "${repository}")"
-    elif body="$(curl "${GITHUB_CURL_ARGS[@]}" \
-        "https://api.github.com/repos/${repository}/releases/latest")"; then
-        latest="$(jq -er '
-            .tag_name
-            | select(test("^v?[0-9]+(\\.[0-9]+){1,3}$"))
-        ' <<< "${body}")" || true
-    fi
-
-    if [[ -z "${latest}" ]]; then
-        echo "GitHub release metadata unavailable for ${repository}; falling back to tags." >&2
-        latest="$(latest_github_tag_version "${repository}")"
-    fi
+    case "${strategy}" in
+        release)
+            if body="$(curl "${GITHUB_CURL_ARGS[@]}" \
+                "https://api.github.com/repos/${repository}/releases/latest")"; then
+                latest="$(jq -er '
+                    .tag_name
+                    | select(test("^v?[0-9]+(\\.[0-9]+){1,3}$"))
+                ' <<< "${body}")" || true
+                if [[ -n "${latest}" ]]; then
+                    cache_file="${TEMP_DIR}/release-${repository//\//_}-${latest}.json"
+                    printf '%s\n' "${body}" > "${cache_file}"
+                fi
+            fi
+            ;;
+        tags) latest="$(latest_github_tag_version "${repository}")" ;;
+        *) echo "Unknown GitHub version source strategy: ${strategy}" >&2; exit 2 ;;
+    esac
     [[ -n "${latest}" ]] || {
-        echo "Unable to find a stable release tag for ${repository}." >&2
+        echo "Unable to find a stable ${strategy} version for ${repository}." >&2
         exit 1
     }
     printf '%s\n' "${latest}"
@@ -119,21 +120,26 @@ latest_github_version() {
 resolve_tag_sha() {
     local repository="$1"
     local tag="$2"
-    local refs sha
+    local sha
 
-    refs="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags \
-        "https://github.com/${repository}.git" \
-        "refs/tags/${tag}" "refs/tags/${tag}^{}")"
-    sha="$(awk -v peeled="refs/tags/${tag}^{}" -v direct="refs/tags/${tag}" '
-        $2 == direct { fallback = $1 }
-        $2 == peeled { print $1; found = 1 }
-        END { if (!found) print fallback }
-    ' <<< "${refs}")"
+    sha="$(curl "${GITHUB_CURL_ARGS[@]}" \
+        "https://api.github.com/repos/${repository}/commits/${tag}" \
+        | jq -er '.sha')"
     [[ "${sha}" =~ ^[a-f0-9]{40}$ ]] || {
         echo "Unable to resolve ${repository}@${tag} to a commit." >&2
         exit 1
     }
     printf '%s\n' "${sha}"
+}
+
+assert_not_downgrade() {
+    local name="$1" current="${2#v}" latest="${3#v}" oldest
+    [[ "${current}" == "${latest}" ]] && return 0
+    oldest="$(printf '%s\n%s\n' "${current}" "${latest}" | sort -V | head -n1)"
+    [[ "${oldest}" != "${latest}" ]] || {
+        echo "Refusing to downgrade ${name} from ${current} to ${latest}." >&2
+        exit 1
+    }
 }
 
 image_digest() {
@@ -163,20 +169,42 @@ record() {
         >> "${RECORDS_FILE}"
 }
 
-replace_literal() {
-    local search="$1" replacement="$2" escaped_search escaped_replacement
+queue_replacement() {
+    local search="$1" replacement="$2" file found=false
     shift 2
     [[ "${search}" != *$'\n'* && "${replacement}" != *$'\n'* ]] || {
         echo "Refusing to replace a multiline value." >&2
         exit 1
     }
-    escaped_search="$(printf '%s' "${search}" | sed 's/[][\\.^$*+?(){}|]/\\&/g')"
-    escaped_replacement="$(printf '%s' "${replacement}" | sed 's/[&|\\]/\\&/g')"
-    grep -Fq -- "${search}" "$@" || {
+    for file in "$@"; do
+        if grep -Fq -- "${search}" "${file}"; then
+            found=true
+            REPLACEMENT_FILES+=("${file}")
+            REPLACEMENT_SEARCHES+=("${search}")
+            REPLACEMENT_VALUES+=("${replacement}")
+        fi
+    done
+    [[ "${found}" == true ]] || {
         echo "Unable to find the exact value to replace: ${search}" >&2
         exit 1
     }
-    sed -i -E "s|${escaped_search}|${escaped_replacement}|g" "$@"
+}
+
+apply_replacements() {
+    [[ "${MODE}" == --update ]] || return 0
+    local index file search replacement escaped_search escaped_replacement
+    for index in "${!REPLACEMENT_FILES[@]}"; do
+        file="${REPLACEMENT_FILES[index]}"
+        search="${REPLACEMENT_SEARCHES[index]}"
+        replacement="${REPLACEMENT_VALUES[index]}"
+        grep -Fq -- "${search}" "${file}" || {
+            echo "Planned value disappeared before apply: ${search}" >&2
+            exit 1
+        }
+        escaped_search="$(printf '%s' "${search}" | sed 's/[][\\.^$*+?(){}|]/\\&/g')"
+        escaped_replacement="$(printf '%s' "${replacement}" | sed 's/[&|\\]/\\&/g')"
+        sed -i -E "s|${escaped_search}|${escaped_replacement}|g" "${file}"
+    done
 }
 
 dockerfile_arg() {
@@ -210,16 +238,9 @@ latest_linuxserver_tag() {
         | sort -V | tail -n1
 }
 
-latest_dockerfile_major_tag() {
-    curl "${CURL_ARGS[@]}" \
-        'https://hub.docker.com/v2/repositories/docker/dockerfile/tags?page_size=100' \
-        | jq -r '.results[].name' \
-        | sed -nE '/^[0-9]+$/p' \
-        | sort -V | tail -n1
-}
-
 update_action_pins() {
     local line repository current_sha current_tag latest_tag latest_sha
+    local suffix comment_prefix updated_line
     while IFS= read -r line; do
         repository="$(sed -E 's|.*uses:[[:space:]]*([^@[:space:]]+)@.*|\1|' <<<"${line}")"
         current_sha="$(sed -E 's|.*@([a-f0-9]{40}).*|\1|' <<<"${line}")"
@@ -228,28 +249,36 @@ update_action_pins() {
             echo "Action pin has no version comment: ${line}" >&2
             exit 1
         }
-        latest_tag="$(latest_github_version "${repository}")"
+        latest_tag="$(latest_github_version "${repository}" release)"
+        assert_not_downgrade "${repository}" "${current_tag}" "${latest_tag}"
         latest_sha="$(resolve_tag_sha "${repository}" "${latest_tag}")"
         record action "${repository}" "${current_tag}@${current_sha}" "${latest_tag}@${latest_sha}"
-        if [[ "${MODE}" == --update && "${current_sha}" != "${latest_sha}" ]]; then
-            replace_literal \
-                "${repository}@${current_sha} # ${current_tag}" \
-                "${repository}@${latest_sha} # ${latest_tag}" \
-                "${WORKFLOW_FILES[@]}"
+        if [[ "${MODE}" == --update ]] &&
+            [[ "${current_tag}@${current_sha}" != "${latest_tag}@${latest_sha}" ]]; then
+            suffix="${line#*"${repository}@${current_sha}"}"
+            [[ "${suffix}" == *"${current_tag}" ]] || {
+                echo "Unable to preserve Action pin formatting: ${line}" >&2
+                exit 1
+            }
+            comment_prefix="${suffix%"${current_tag}"}"
+            updated_line="${line%%"${repository}@${current_sha}"*}"
+            updated_line+="${repository}@${latest_sha}${comment_prefix}${latest_tag}"
+            queue_replacement "${line}" "${updated_line}" "${WORKFLOW_FILES[@]}"
         fi
     done < <(grep -hE 'uses:[[:space:]]+[^./][^@[:space:]]+@[a-f0-9]{40}' \
         "${WORKFLOW_FILES[@]}" | sort -u)
 }
 
 update_release_version() {
-    local name="$1" repository="$2" variable="$3"
+    local name="$1" repository="$2" variable="$3" strategy="$4"
     local current latest normalized
     current="$(dockerfile_arg "${variable}")"
-    latest="$(latest_github_version "${repository}")"
+    latest="$(latest_github_version "${repository}" "${strategy}")"
     normalized="${latest#v}"
+    assert_not_downgrade "${name}" "${current}" "${normalized}"
     record release "${name}" "${current}" "${normalized}"
     if [[ "${MODE}" == --update && "${current}" != "${normalized}" ]]; then
-        replace_literal "ARG ${variable}=${current}" \
+        queue_replacement "ARG ${variable}=${current}" \
             "ARG ${variable}=${normalized}" "${DOCKERFILE}"
     fi
     printf '%s\n' "${normalized}"
@@ -263,10 +292,11 @@ update_buildx() {
         echo "BUILDX_VERSION pins are inconsistent." >&2
         exit 1
     }
-    latest="$(latest_github_version docker/buildx)"
+    latest="$(latest_github_version docker/buildx release)"
+    assert_not_downgrade docker/buildx "${current}" "${latest}"
     record release docker/buildx "${current}" "${latest}"
     if [[ "${MODE}" == --update && "${current}" != "${latest}" ]]; then
-        replace_literal "BUILDX_VERSION: ${current}" \
+        queue_replacement "BUILDX_VERSION: ${current}" \
             "BUILDX_VERSION: ${latest}" "${WORKFLOW_FILES[@]}"
     fi
 }
@@ -286,16 +316,20 @@ update_image_pin() {
     current_digest="sha256:${current_ref##*@sha256:}"
     case "${tag_template}" in
         release)
-            release_tag="$(latest_github_version "${source_repository}")"
+            release_tag="$(latest_github_version "${source_repository}" release)"
             latest_tag="${release_tag}"
+            assert_not_downgrade "${name}" "${current_tag}" "${latest_tag}"
             ;;
         release-no-v)
-            release_tag="$(latest_github_version "${source_repository}")"
+            release_tag="$(latest_github_version "${source_repository}" release)"
             latest_tag="${release_tag#v}"
+            assert_not_downgrade "${name}" "${current_tag}" "${latest_tag}"
             ;;
         release-debian)
-            release_tag="$(latest_github_version "${source_repository}")"
+            release_tag="$(latest_github_version "${source_repository}" release)"
             latest_tag="${release_tag}-debian"
+            assert_not_downgrade "${name}" \
+                "${current_tag%-debian}" "${release_tag}"
             ;;
         *) echo "Unknown image tag template: ${tag_template}" >&2; exit 1 ;;
     esac
@@ -303,7 +337,7 @@ update_image_pin() {
     latest_ref="${name}:${latest_tag}@${latest_digest}"
     record image "${name}" "${current_tag}@${current_digest}" "${latest_tag}@${latest_digest}"
     if [[ "${MODE}" == --update && "${current_ref}" != "${latest_ref}" ]]; then
-        replace_literal "${current_ref}" "${latest_ref}" "${WORKFLOW_FILES[@]}"
+        queue_replacement "${current_ref}" "${latest_ref}" "${WORKFLOW_FILES[@]}"
     fi
 }
 
@@ -318,12 +352,14 @@ update_base_image() {
     current_tag="${current_tag%@sha256:*}"
     current_digest="sha256:${current_ref##*@sha256:}"
     latest_tag="$(latest_linuxserver_tag)"
+    assert_not_downgrade ghcr.io/linuxserver/baseimage-alpine \
+        "${current_tag}" "${latest_tag}"
     latest_digest="$(image_digest "ghcr.io/linuxserver/baseimage-alpine:${latest_tag}")"
     latest_ref="ghcr.io/linuxserver/baseimage-alpine:${latest_tag}@${latest_digest}"
     record image ghcr.io/linuxserver/baseimage-alpine \
         "${current_tag}@${current_digest}" "${latest_tag}@${latest_digest}"
     if [[ "${MODE}" == --update && "${current_ref}" != "${latest_ref}" ]]; then
-        replace_literal "ARG BASE_IMAGE=${current_ref}" \
+        queue_replacement "ARG BASE_IMAGE=${current_ref}" \
             "ARG BASE_IMAGE=${latest_ref}" "${DOCKERFILE}"
     fi
 }
@@ -337,13 +373,13 @@ update_dockerfile_frontend() {
     }
     current_tag="${BASH_REMATCH[1]}"
     current_digest="sha256:${BASH_REMATCH[2]}"
-    latest_tag="$(latest_dockerfile_major_tag)"
+    latest_tag="${current_tag}"
     latest_digest="$(image_digest "docker/dockerfile:${latest_tag}")"
     record image docker/dockerfile \
         "${current_tag}@${current_digest}" "${latest_tag}@${latest_digest}"
     if [[ "${MODE}" == --update ]] &&
         [[ "${current_tag}@${current_digest}" != "${latest_tag}@${latest_digest}" ]]; then
-        replace_literal "${line}" \
+        queue_replacement "${line}" \
             "# syntax=docker/dockerfile:${latest_tag}@${latest_digest}" "${DOCKERFILE}"
     fi
 }
@@ -356,84 +392,100 @@ checksum() {
     sha256sum "$1" | awk '{print $1}'
 }
 
+github_release_asset_checksum() {
+    local repository="$1" tag="$2" asset_name="$3"
+    local cache_file digest
+    cache_file="${TEMP_DIR}/release-${repository//\//_}-${tag}.json"
+    if [[ ! -s "${cache_file}" ]]; then
+        curl "${GITHUB_CURL_ARGS[@]}" \
+            "https://api.github.com/repos/${repository}/releases/tags/${tag}" \
+            --output "${cache_file}" || return 1
+    fi
+    digest="$(jq -er --arg name "${asset_name}" '
+        .assets[]
+        | select(.name == $name)
+        | .digest
+        | select(type == "string")
+    ' "${cache_file}")" || return 1
+    [[ "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]] || return 1
+    printf '%s\n' "${digest#sha256:}"
+}
+
+release_asset_checksum() {
+    local repository="$1" tag="$2" asset_name="$3" url="$4" archive="$5"
+    local digest
+    if digest="$(github_release_asset_checksum \
+        "${repository}" "${tag}" "${asset_name}")"; then
+        printf '%s\n' "${digest}"
+        return 0
+    fi
+    echo "Release digest unavailable for ${repository}/${asset_name}; downloading asset." >&2
+    download "${url}" "${archive}"
+    checksum "${archive}"
+}
+
 update_release_checksums() {
     local geoip_version="$1" crowdsec_version="$2"
     local geo_amd_archive geo_arm_archive crowdsec_archive
+    local geo_amd_asset geo_arm_asset crowdsec_asset
+    local geo_amd_url geo_arm_url crowdsec_url
     local geo_amd_sha geo_arm_sha crowdsec_sha source_dir extract_root
+    local current_geo_amd_sha current_geo_arm_sha
+    local current_crowdsec_version current_crowdsec_sha
     geo_amd_archive="${TEMP_DIR}/geoipupdate-amd64.tar.gz"
     geo_arm_archive="${TEMP_DIR}/geoipupdate-arm64.tar.gz"
     crowdsec_archive="${TEMP_DIR}/crowdsec-nginx-bouncer.tgz"
 
-    download "https://github.com/maxmind/geoipupdate/releases/download/v${geoip_version}/geoipupdate_${geoip_version}_linux_amd64.tar.gz" "${geo_amd_archive}"
-    download "https://github.com/maxmind/geoipupdate/releases/download/v${geoip_version}/geoipupdate_${geoip_version}_linux_arm64.tar.gz" "${geo_arm_archive}"
-    download "https://github.com/crowdsecurity/cs-nginx-bouncer/releases/download/v${crowdsec_version}/crowdsec-nginx-bouncer.tgz" "${crowdsec_archive}"
+    geo_amd_asset="geoipupdate_${geoip_version}_linux_amd64.tar.gz"
+    geo_arm_asset="geoipupdate_${geoip_version}_linux_arm64.tar.gz"
+    crowdsec_asset=crowdsec-nginx-bouncer.tgz
+    geo_amd_url="https://github.com/maxmind/geoipupdate/releases/download/v${geoip_version}/${geo_amd_asset}"
+    geo_arm_url="https://github.com/maxmind/geoipupdate/releases/download/v${geoip_version}/${geo_arm_asset}"
+    crowdsec_url="https://github.com/crowdsecurity/cs-nginx-bouncer/releases/download/v${crowdsec_version}/${crowdsec_asset}"
 
-    geo_amd_sha="$(checksum "${geo_amd_archive}")"
-    geo_arm_sha="$(checksum "${geo_arm_archive}")"
-    crowdsec_sha="$(checksum "${crowdsec_archive}")"
-    record checksum GEOIPUPDATE_AMD64_SHA256 \
-        "$(dockerfile_arg GEOIPUPDATE_AMD64_SHA256)" "${geo_amd_sha}"
-    record checksum GEOIPUPDATE_ARM64_SHA256 \
-        "$(dockerfile_arg GEOIPUPDATE_ARM64_SHA256)" "${geo_arm_sha}"
-    record checksum CROWDSEC_BOUNCER_SHA256 \
-        "$(dockerfile_arg CROWDSEC_BOUNCER_SHA256)" "${crowdsec_sha}"
+    geo_amd_sha="$(release_asset_checksum maxmind/geoipupdate \
+        "v${geoip_version}" "${geo_amd_asset}" "${geo_amd_url}" "${geo_amd_archive}")"
+    geo_arm_sha="$(release_asset_checksum maxmind/geoipupdate \
+        "v${geoip_version}" "${geo_arm_asset}" "${geo_arm_url}" "${geo_arm_archive}")"
+    crowdsec_sha="$(release_asset_checksum crowdsecurity/cs-nginx-bouncer \
+        "v${crowdsec_version}" "${crowdsec_asset}" "${crowdsec_url}" "${crowdsec_archive}")"
+    current_geo_amd_sha="$(dockerfile_arg GEOIPUPDATE_AMD64_SHA256)"
+    current_geo_arm_sha="$(dockerfile_arg GEOIPUPDATE_ARM64_SHA256)"
+    current_crowdsec_version="$(dockerfile_arg CROWDSEC_BOUNCER_VERSION)"
+    current_crowdsec_sha="$(dockerfile_arg CROWDSEC_BOUNCER_SHA256)"
+    record checksum GEOIPUPDATE_AMD64_SHA256 "${current_geo_amd_sha}" "${geo_amd_sha}"
+    record checksum GEOIPUPDATE_ARM64_SHA256 "${current_geo_arm_sha}" "${geo_arm_sha}"
+    record checksum CROWDSEC_BOUNCER_SHA256 "${current_crowdsec_sha}" "${crowdsec_sha}"
 
-    extract_root="${TEMP_DIR}/crowdsec-source"
-    mkdir -p "${extract_root}"
-    tar -xzf "${crowdsec_archive}" -C "${extract_root}"
-    source_dir="$(find "${extract_root}" -mindepth 1 -maxdepth 1 -type d -print -quit)"
-    [[ -n "${source_dir}" ]] || { echo "Unable to locate CrowdSec source." >&2; exit 1; }
-    patch --dry-run --batch --forward --fuzz=0 -p1 \
-        -d "${source_dir}/lua-mod/lib" < "${PATCH_FILE}" >/dev/null
+    if [[ "${current_crowdsec_version}" != "${crowdsec_version}" ]] ||
+        [[ "${current_crowdsec_sha}" != "${crowdsec_sha}" ]]; then
+        [[ -s "${crowdsec_archive}" ]] || download "${crowdsec_url}" "${crowdsec_archive}"
+        extract_root="${TEMP_DIR}/crowdsec-source"
+        mkdir -p "${extract_root}"
+        tar -xzf "${crowdsec_archive}" -C "${extract_root}"
+        source_dir="$(find "${extract_root}" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+        [[ -n "${source_dir}" ]] || {
+            echo "Unable to locate CrowdSec source." >&2
+            exit 1
+        }
+        patch --dry-run --batch --forward --fuzz=0 -p1 \
+            -d "${source_dir}/lua-mod/lib" < "${PATCH_FILE}" >/dev/null
+    fi
 
     if [[ "${MODE}" == --update ]]; then
-        replace_literal \
-            "ARG GEOIPUPDATE_AMD64_SHA256=$(dockerfile_arg GEOIPUPDATE_AMD64_SHA256)" \
-            "ARG GEOIPUPDATE_AMD64_SHA256=${geo_amd_sha}" "${DOCKERFILE}"
-        replace_literal \
-            "ARG GEOIPUPDATE_ARM64_SHA256=$(dockerfile_arg GEOIPUPDATE_ARM64_SHA256)" \
-            "ARG GEOIPUPDATE_ARM64_SHA256=${geo_arm_sha}" "${DOCKERFILE}"
-        replace_literal \
-            "ARG CROWDSEC_BOUNCER_SHA256=$(dockerfile_arg CROWDSEC_BOUNCER_SHA256)" \
-            "ARG CROWDSEC_BOUNCER_SHA256=${crowdsec_sha}" "${DOCKERFILE}"
+        if [[ "${current_geo_amd_sha}" != "${geo_amd_sha}" ]]; then
+            queue_replacement "ARG GEOIPUPDATE_AMD64_SHA256=${current_geo_amd_sha}" \
+                "ARG GEOIPUPDATE_AMD64_SHA256=${geo_amd_sha}" "${DOCKERFILE}"
+        fi
+        if [[ "${current_geo_arm_sha}" != "${geo_arm_sha}" ]]; then
+            queue_replacement "ARG GEOIPUPDATE_ARM64_SHA256=${current_geo_arm_sha}" \
+                "ARG GEOIPUPDATE_ARM64_SHA256=${geo_arm_sha}" "${DOCKERFILE}"
+        fi
+        if [[ "${current_crowdsec_sha}" != "${crowdsec_sha}" ]]; then
+            queue_replacement "ARG CROWDSEC_BOUNCER_SHA256=${current_crowdsec_sha}" \
+                "ARG CROWDSEC_BOUNCER_SHA256=${crowdsec_sha}" "${DOCKERFILE}"
+        fi
     fi
-}
-
-audit_inventory() {
-    local known_images='^(moby/buildkit|koalaman/shellcheck|ghcr.io/hadolint/hadolint|rhysd/actionlint):'
-    local ref dockerfile_args expected_dockerfile_args
-    while IFS= read -r ref; do
-        [[ "${ref}" =~ ${known_images} ]] || {
-            echo "Unmanaged workflow image pin: ${ref}" >&2
-            exit 1
-        }
-    done < <(grep -hEo '[[:alnum:]./_-]+:[^[:space:]]+@sha256:[a-f0-9]{64}' \
-        "${WORKFLOW_FILES[@]}" | sort -u)
-
-    while IFS= read -r ref; do
-        [[ "${ref}" =~ @[a-f0-9]{40}$ ]] || {
-            echo "External GitHub Action is not pinned to a commit SHA: ${ref}" >&2
-            exit 1
-        }
-    done < <(grep -hEo 'uses:[[:space:]]+[^./][^[:space:]]+' \
-        "${WORKFLOW_FILES[@]}" | sed -E 's/^uses:[[:space:]]+//' | sort -u)
-
-    dockerfile_args="$(sed -nE 's/^ARG ([A-Z0-9_]+)=.*/\1/p' \
-        "${DOCKERFILE}" | sort)"
-    expected_dockerfile_args="$(printf '%s\n' \
-        APK_REFRESH_DATE \
-        BASE_IMAGE \
-        CROWDSEC_BOUNCER_SHA256 \
-        CROWDSEC_BOUNCER_VERSION \
-        GEOIPUPDATE_AMD64_SHA256 \
-        GEOIPUPDATE_ARM64_SHA256 \
-        GEOIPUPDATE_VERSION | sort)"
-    [[ "${dockerfile_args}" == "${expected_dockerfile_args}" ]] || {
-        echo "Dockerfile dependency ARG inventory changed; update check-updates.sh." >&2
-        diff -u <(printf '%s\n' "${expected_dockerfile_args}") \
-            <(printf '%s\n' "${dockerfile_args}") >&2 || true
-        exit 1
-    }
 }
 
 compare_apk_and_refresh() {
@@ -444,7 +496,7 @@ compare_apk_and_refresh() {
     if grep -q '<!-- apk-updates-available:true -->' "${apk_report}"; then
         record apk floating-packages changed refresh-required
         current_refresh="$(dockerfile_arg APK_REFRESH_DATE)"
-        replace_literal "ARG APK_REFRESH_DATE=${current_refresh}" \
+        queue_replacement "ARG APK_REFRESH_DATE=${current_refresh}" \
             "ARG APK_REFRESH_DATE=$(date -u +%F)" "${DOCKERFILE}"
     else
         record apk floating-packages current current
@@ -481,7 +533,6 @@ emit_report() {
     esac
 }
 
-audit_inventory
 update_action_pins
 update_buildx
 update_dockerfile_frontend
@@ -490,8 +541,11 @@ update_image_pin moby/buildkit moby/buildkit release
 update_image_pin koalaman/shellcheck koalaman/shellcheck release
 update_image_pin ghcr.io/hadolint/hadolint hadolint/hadolint release-debian
 update_image_pin rhysd/actionlint rhysd/actionlint release-no-v
-geoip_version="$(update_release_version GeoIPUpdate maxmind/geoipupdate GEOIPUPDATE_VERSION)"
-crowdsec_version="$(update_release_version CrowdSec crowdsecurity/cs-nginx-bouncer CROWDSEC_BOUNCER_VERSION)"
+geoip_version="$(update_release_version \
+    GeoIPUpdate maxmind/geoipupdate GEOIPUPDATE_VERSION release)"
+crowdsec_version="$(update_release_version \
+    CrowdSec crowdsecurity/cs-nginx-bouncer CROWDSEC_BOUNCER_VERSION tags)"
 update_release_checksums "${geoip_version}" "${crowdsec_version}"
 compare_apk_and_refresh
+apply_replacements
 emit_report
