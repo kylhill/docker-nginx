@@ -96,7 +96,7 @@ parse_test_cases() {
 
 install_fixtures() {
     local volume="$1"
-    docker run --rm \
+    docker run --rm --network none \
         -v "${volume}:/config" \
         -v "${FIXTURE_ROOT}:/fixtures:ro" \
         --entrypoint sh \
@@ -259,6 +259,7 @@ EOF'
     DIAGNOSTIC_CONTAINERS=("${persisted_target}")
     docker run -d \
         --name "${persisted_target}" \
+        --network "${NETWORK}" \
         --read-only \
         --tmpfs /run:exec \
         --tmpfs /tmp \
@@ -291,7 +292,7 @@ test_nonroot() {
     new_volume "${nonroot_volume}"
     # Docker reapplies the image directory's ownership when a named volume is
     # still empty, so retain a marker while preparing the pre-writable volume.
-    docker run --rm \
+    docker run --rm --network none \
         -v "${nonroot_volume}:/config" \
         --entrypoint sh \
         "${IMAGE}" \
@@ -302,6 +303,7 @@ test_nonroot() {
     DIAGNOSTIC_CONTAINERS=("${nonroot_target}")
     docker run -d \
         --name "${nonroot_target}" \
+        --network none \
         --user 1000:1000 \
         --read-only \
         --cap-drop ALL \

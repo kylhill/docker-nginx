@@ -88,10 +88,10 @@ for arch in "${ARCH_LIST[@]}"; do
     fi
 
     docker tag "${PUBLISHED_IMAGE}" "${published}"
-    docker run --rm --platform "${platform}" --entrypoint apk \
+    docker run --rm --network none --platform "${platform}" --entrypoint apk \
         "${candidate}" --repositories-file /dev/null info -v \
         | sort > "${candidate_packages}"
-    docker run --rm --platform "${platform}" --entrypoint apk \
+    docker run --rm --network none --platform "${platform}" --entrypoint apk \
         "${published}" --repositories-file /dev/null info -v \
         | sort > "${published_packages}"
 

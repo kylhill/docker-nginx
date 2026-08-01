@@ -11,11 +11,13 @@ LOG_ERROR_REGEX="${LOG_ERROR_REGEX:-\\[(emerg|alert|crit|error)\\]|^ERROR:|^FATA
 KEEP_CONTAINER="${KEEP_CONTAINER:-0}"
 
 CONFIG_VOLUME="${CONFIG_VOLUME:-${CONTAINER}-config}"
+NETWORK="${CONTAINER}-network"
 LOG_FILE="$(mktemp)"
 
 cleanup() {
     if [ "${KEEP_CONTAINER}" != "1" ]; then
         docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true
+        docker network rm "${NETWORK}" >/dev/null 2>&1 || true
         docker volume rm "${CONFIG_VOLUME}" >/dev/null 2>&1 || true
     fi
     rm -f "${LOG_FILE}"
@@ -40,6 +42,7 @@ else
 fi
 
 docker volume create "${CONFIG_VOLUME}" >/dev/null
+docker network create "${NETWORK}" >/dev/null
 
 echo "Starting ${CONTAINER} with temporary /config..."
 RUN_ARGS=()
@@ -49,6 +52,7 @@ fi
 
 docker run -d \
     --name "${CONTAINER}" \
+    --network "${NETWORK}" \
     -v "${CONFIG_VOLUME}:/config" \
     "${RUN_ARGS[@]}" \
     "${IMAGE}" >/dev/null
