@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
 
 # Inspired by https://github.com/linuxserver/docker-baseimage-alpine-nginx/blob/master/Dockerfile
-ARG BASE_IMAGE=ghcr.io/linuxserver/baseimage-alpine:3.24@sha256:15e4f2ab8c6921ee238e730eb8b53c59e31c99e9b817b6206063c2f24e32cedb
+ARG BASE_IMAGE=ghcr.io/linuxserver/baseimage-alpine:3.24@sha256:34c19f3f2345f1d231784e78db95e330ce198c267b10fe8daa88b6bded30636b
 FROM ${BASE_IMAGE} AS runtime-packages
 
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]

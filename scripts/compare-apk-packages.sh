@@ -65,15 +65,29 @@ for arch in "${ARCH_LIST[@]}"; do
     published_packages="${TEMP_DIR}/published-${arch}.txt"
     added="${TEMP_DIR}/added-${arch}.txt"
     removed="${TEMP_DIR}/removed-${arch}.txt"
+    build_log="${TEMP_DIR}/build-${arch}.log"
+    build_args=(
+        --platform "${platform}"
+        --pull
+        --no-cache
+        --target runtime-packages
+        --load
+        --tag "${candidate}"
+        "${REPOSITORY_ROOT}"
+    )
 
-    docker buildx build \
-        --platform "${platform}" \
-        --pull \
-        --no-cache \
-        --target runtime-packages \
-        --load \
-        --tag "${candidate}" \
-        "${REPOSITORY_ROOT}" >/dev/null
+    if ! docker buildx build "${build_args[@]}" > "${build_log}" 2>&1; then
+        if ! grep -Fq 'network bridge not found' "${build_log}"; then
+            cat "${build_log}" >&2
+            exit 1
+        fi
+
+        echo "Docker's default bridge is unavailable; retrying with host networking." >&2
+        docker buildx build \
+            --allow network.host \
+            --network host \
+            "${build_args[@]}" >/dev/null
+    fi
 
     {
         echo
