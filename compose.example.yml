@@ -4,17 +4,19 @@ services:
     restart: unless-stopped
     stop_grace_period: 30s
     read_only: true
-    environment:
-      PUID: "1000"
-      PGID: "1000"
-      TZ: America/Chicago
-      UMASK: "022"
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges=true
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "0"
     ports:
       - "80:80/tcp"
       - "443:443/tcp"
       - "443:443/udp"
     volumes:
-      - ./config:/config
+      - ./config:/config:ro
     tmpfs:
-      - /run:exec
-      - /tmp
+      - /run:exec,uid=1000,gid=1000,mode=0755
+      - /tmp:uid=1000,gid=1000,mode=1777

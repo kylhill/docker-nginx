@@ -2,7 +2,5 @@
 **
 
 !Dockerfile
-!root/
-!root/**
 !patches/
 !patches/crowdsec-lua.patch

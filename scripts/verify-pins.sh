@@ -37,9 +37,6 @@ expected_dockerfile_args="$(printf '%s\n' \
     BASE_IMAGE \
     CROWDSEC_BOUNCER_SHA256 \
     CROWDSEC_BOUNCER_VERSION \
-    GEOIPUPDATE_AMD64_SHA256 \
-    GEOIPUPDATE_ARM64_SHA256 \
-    GEOIPUPDATE_VERSION \
     LUA_RESTY_STRING_VERSION | sort)"
 [[ "${dockerfile_args}" == "${expected_dockerfile_args}" ]] || {
     echo "Dockerfile dependency ARG inventory changed; update check-updates.sh." >&2

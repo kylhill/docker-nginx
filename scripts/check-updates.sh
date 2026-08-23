@@ -252,13 +252,13 @@ dockerfile_arg() {
     sed -nE "s/^ARG $1=//p" "${DOCKERFILE}"
 }
 
-latest_linuxserver_tag() {
+latest_alpine_tag() {
     local token body count last_tag
     local -a query
-    local tags_file="${TEMP_DIR}/linuxserver-tags"
+    local tags_file="${TEMP_DIR}/alpine-tags"
     : > "${tags_file}"
     token="$(curl "${CURL_ARGS[@]}" \
-        'https://ghcr.io/token?scope=repository:linuxserver/baseimage-alpine:pull' \
+        'https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/alpine:pull' \
         | jq -er '.token')"
 
     last_tag=
@@ -268,7 +268,7 @@ latest_linuxserver_tag() {
         body="$(curl "${CURL_ARGS[@]}" --get \
             --header "Authorization: Bearer ${token}" \
             "${query[@]}" \
-            'https://ghcr.io/v2/linuxserver/baseimage-alpine/tags/list')"
+            'https://registry-1.docker.io/v2/library/alpine/tags/list')"
         jq -r '.tags[]' <<< "${body}" >> "${tags_file}"
         count="$(jq '.tags | length' <<< "${body}")"
         ((count == 1000)) || break
@@ -385,20 +385,20 @@ update_image_pin() {
 update_base_image() {
     local current_ref current_tag current_digest latest_tag latest_digest latest_ref
     current_ref="$(dockerfile_arg BASE_IMAGE)"
-    [[ "${current_ref}" == ghcr.io/linuxserver/baseimage-alpine:*@sha256:* ]] || {
+    [[ "${current_ref}" == docker.io/library/alpine:*@sha256:* ]] || {
         echo "BASE_IMAGE is not pinned by tag and digest." >&2
         exit 1
     }
-    current_tag="${current_ref#ghcr.io/linuxserver/baseimage-alpine:}"
+    current_tag="${current_ref#docker.io/library/alpine:}"
     current_tag="${current_tag%@sha256:*}"
     current_digest="sha256:${current_ref##*@sha256:}"
-    latest_tag="$(latest_linuxserver_tag)"
+    latest_tag="$(latest_alpine_tag)"
     LATEST_BASE_IMAGE_TAG="${latest_tag}"
-    assert_not_downgrade ghcr.io/linuxserver/baseimage-alpine \
+    assert_not_downgrade docker.io/library/alpine \
         "${current_tag}" "${latest_tag}"
-    latest_digest="$(image_digest "ghcr.io/linuxserver/baseimage-alpine:${latest_tag}")"
-    latest_ref="ghcr.io/linuxserver/baseimage-alpine:${latest_tag}@${latest_digest}"
-    record image ghcr.io/linuxserver/baseimage-alpine \
+    latest_digest="$(image_digest "docker.io/library/alpine:${latest_tag}")"
+    latest_ref="docker.io/library/alpine:${latest_tag}@${latest_digest}"
+    record image docker.io/library/alpine \
         "${current_tag}@${current_digest}" "${latest_tag}@${latest_digest}"
     if [[ "${MODE}" == --update && "${current_ref}" != "${latest_ref}" ]]; then
         queue_replacement "ARG BASE_IMAGE=${current_ref}" \
@@ -520,37 +520,20 @@ release_asset_checksum() {
     checksum "${archive}"
 }
 
-update_release_checksums() {
-    local geoip_version="$1" crowdsec_version="$2"
-    local geo_amd_archive geo_arm_archive crowdsec_archive
-    local geo_amd_asset geo_arm_asset crowdsec_asset
-    local geo_amd_url geo_arm_url crowdsec_url
-    local geo_amd_sha geo_arm_sha crowdsec_sha source_dir extract_root
-    local current_geo_amd_sha current_geo_arm_sha
+update_crowdsec_checksum() {
+    local crowdsec_version="$1"
+    local crowdsec_archive crowdsec_asset crowdsec_url
+    local crowdsec_sha source_dir extract_root
     local current_crowdsec_version current_crowdsec_sha
-    geo_amd_archive="${TEMP_DIR}/geoipupdate-amd64.tar.gz"
-    geo_arm_archive="${TEMP_DIR}/geoipupdate-arm64.tar.gz"
     crowdsec_archive="${TEMP_DIR}/crowdsec-nginx-bouncer.tgz"
 
-    geo_amd_asset="geoipupdate_${geoip_version}_linux_amd64.tar.gz"
-    geo_arm_asset="geoipupdate_${geoip_version}_linux_arm64.tar.gz"
     crowdsec_asset=crowdsec-nginx-bouncer.tgz
-    geo_amd_url="https://github.com/maxmind/geoipupdate/releases/download/v${geoip_version}/${geo_amd_asset}"
-    geo_arm_url="https://github.com/maxmind/geoipupdate/releases/download/v${geoip_version}/${geo_arm_asset}"
     crowdsec_url="https://github.com/crowdsecurity/cs-nginx-bouncer/releases/download/v${crowdsec_version}/${crowdsec_asset}"
 
-    geo_amd_sha="$(release_asset_checksum maxmind/geoipupdate \
-        "v${geoip_version}" "${geo_amd_asset}" "${geo_amd_url}" "${geo_amd_archive}")"
-    geo_arm_sha="$(release_asset_checksum maxmind/geoipupdate \
-        "v${geoip_version}" "${geo_arm_asset}" "${geo_arm_url}" "${geo_arm_archive}")"
     crowdsec_sha="$(release_asset_checksum crowdsecurity/cs-nginx-bouncer \
         "v${crowdsec_version}" "${crowdsec_asset}" "${crowdsec_url}" "${crowdsec_archive}")"
-    current_geo_amd_sha="$(dockerfile_arg GEOIPUPDATE_AMD64_SHA256)"
-    current_geo_arm_sha="$(dockerfile_arg GEOIPUPDATE_ARM64_SHA256)"
     current_crowdsec_version="$(dockerfile_arg CROWDSEC_BOUNCER_VERSION)"
     current_crowdsec_sha="$(dockerfile_arg CROWDSEC_BOUNCER_SHA256)"
-    record checksum GEOIPUPDATE_AMD64_SHA256 "${current_geo_amd_sha}" "${geo_amd_sha}"
-    record checksum GEOIPUPDATE_ARM64_SHA256 "${current_geo_arm_sha}" "${geo_arm_sha}"
     record checksum CROWDSEC_BOUNCER_SHA256 "${current_crowdsec_sha}" "${crowdsec_sha}"
 
     if [[ "${current_crowdsec_version}" != "${crowdsec_version}" ]] ||
@@ -569,14 +552,6 @@ update_release_checksums() {
     fi
 
     if [[ "${MODE}" == --update ]]; then
-        if [[ "${current_geo_amd_sha}" != "${geo_amd_sha}" ]]; then
-            queue_replacement "ARG GEOIPUPDATE_AMD64_SHA256=${current_geo_amd_sha}" \
-                "ARG GEOIPUPDATE_AMD64_SHA256=${geo_amd_sha}" "${DOCKERFILE}"
-        fi
-        if [[ "${current_geo_arm_sha}" != "${geo_arm_sha}" ]]; then
-            queue_replacement "ARG GEOIPUPDATE_ARM64_SHA256=${current_geo_arm_sha}" \
-                "ARG GEOIPUPDATE_ARM64_SHA256=${geo_arm_sha}" "${DOCKERFILE}"
-        fi
         if [[ "${current_crowdsec_sha}" != "${crowdsec_sha}" ]]; then
             queue_replacement "ARG CROWDSEC_BOUNCER_SHA256=${current_crowdsec_sha}" \
                 "ARG CROWDSEC_BOUNCER_SHA256=${crowdsec_sha}" "${DOCKERFILE}"
@@ -639,11 +614,9 @@ update_image_pin moby/buildkit moby/buildkit release
 update_image_pin koalaman/shellcheck koalaman/shellcheck release
 update_image_pin ghcr.io/hadolint/hadolint hadolint/hadolint release-debian
 update_image_pin rhysd/actionlint rhysd/actionlint release-no-v
-geoip_version="$(update_release_version \
-    GeoIPUpdate maxmind/geoipupdate GEOIPUPDATE_VERSION release)"
 crowdsec_version="$(update_release_version \
     CrowdSec crowdsecurity/cs-nginx-bouncer CROWDSEC_BOUNCER_VERSION tags)"
-update_release_checksums "${geoip_version}" "${crowdsec_version}"
+update_crowdsec_checksum "${crowdsec_version}"
 compare_apk_and_refresh
 apply_replacements
 emit_report

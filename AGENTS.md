@@ -13,102 +13,66 @@ docker buildx build --platform linux/amd64,linux/arm64 -t docker-nginx .
 ## Verification
 
 ```bash
-# Build the image, start a temporary container, run nginx validation, and scan logs
 scripts/verify-image.sh
+scripts/verify-integration.sh
 ```
 
-There are no unit tests. `scripts/verify-image.sh` is the core smoke test to run after Dockerfile, nginx config, or container startup changes. `scripts/verify-integration.sh` covers enabled CrowdSec, secret-file conventions, resolver generation, immutable defaults and overrides, read-only and arbitrary-UID modes, persistence, TLS, and HTTP/2. Its `enabled`, `persistence`, and `nonroot` cases can be selected with `TEST_CASES`; all run by default. The smoke test builds the image, starts it with a temporary `/config` Docker volume, waits for health, runs nginx validation, checks the CrowdSec Lua modules during nginx startup, and fails if startup logs contain error-level patterns.
+There are no unit tests. `scripts/verify-image.sh` is the core smoke test after
+Dockerfile or container-runtime changes. `scripts/verify-integration.sh` covers
+the required external configuration contract, CrowdSec, TLS, HTTP/2, direct
+nginx PID 1 operation, graceful shutdown, read-only mode, and arbitrary UIDs.
+Its `contract`, `enabled`, and `nonroot` cases can be selected with
+`TEST_CASES`; all run by default.
 
 ## Architecture
 
-This is a Docker image that packages nginx on top of the [linuxserver.io Alpine base image](https://github.com/linuxserver/docker-baseimage-alpine). It uses **s6-overlay** for process supervision (inherited from the base image).
+The image is based directly on the official Alpine image. It packages nginx,
+the required Alpine dynamic modules, and the patched CrowdSec Lua bouncer.
+There is no init system or entrypoint script: Docker starts nginx directly with
+`daemon off`, nginx is PID 1, and the image stop signal is `SIGQUIT`.
 
-### `root/` overlay
+The image contains no nginx defaults and performs no configuration generation.
+A complete `/config/nginx/nginx.conf` must be mounted before startup. The image
+never writes below `/config`; read-only deployments provide writable tmpfs
+mounts for `/run:exec` and `/tmp`.
 
-Everything under `root/` is copied directly onto the container filesystem at `/` by the `COPY root/ /` instruction. Three subtrees matter:
-
-- **`root/defaults/nginx/`** — Immutable shipped nginx config. Missing paths under `/config/nginx/` are created as symlinks to these defaults, while regular files at the same paths are preserved as explicit user overrides.
-- **`root/defaults/runtime/`** — Immutable internal templates used to generate ephemeral files under `/run`; these are never copied into `/config`.
-- **`root/etc/s6-overlay/s6-rc.d/`** — s6 service and init definitions.
-
-### s6 init chain
-
-Services run in dependency order:
-
-```
-init-docker-nginx-bootstrap → init-docker-nginx-config
-→ init-docker-nginx-resolver → init-docker-nginx-geoipupdate → init-docker-nginx-crowdsec
-→ init-docker-nginx-permissions → init-docker-nginx-validate → init-docker-nginx-end
-                                              ├→ svc-docker-nginx
-                                              └→ svc-docker-nginx-geoipupdate
-```
-
-- `init-docker-nginx-bootstrap`: creates `/config/geoip`, `/config/keys`, `/config/nginx/site-confs`, generates the persistent `/config/keys/quic_host.key`, and generates fallback TLS credentials when absent
-- `init-docker-nginx-config`: symlinks missing config paths to immutable files under `/defaults/nginx/` while preserving regular-file overrides
-- `init-docker-nginx-resolver`: generates a missing resolver snippet from `/etc/resolv.conf`
-- `init-docker-nginx-geoipupdate`: validates GeoIPUpdate credentials, writes its runtime configuration, and bootstraps any missing configured database
-- `init-docker-nginx-crowdsec`: generates the enabled CrowdSec runtime and nginx configuration
-- `init-docker-nginx-permissions`: makes nginx configuration group-writable and sets root-mode ownership of `/config/**` to `abc:abc`
-- `init-docker-nginx-validate`: validates the completed configuration with `nginx -t`
-- `svc-docker-nginx`: execs nginx in the foreground with its PID under `/run`
-- `svc-docker-nginx-geoipupdate`: skips a redundant refresh after synchronous bootstrap; otherwise refreshes immediately and then every 24 hours
-
-### nginx config loading
-
-The entrypoint is `/etc/nginx/nginx.conf`, which includes
-`/config/nginx/nginx.conf`. The default main config includes:
-
-- `/run/nginx/http.d/*.conf` — generated runtime http-context config blocks
-- `/config/nginx/http.d/*.conf` — default symlinks, overrides, and custom http-context config blocks
-- `/config/nginx/site-confs/*.conf` — virtual host/reverse proxy server blocks
+The health check requests `/health` over
+`/run/nginx-healthcheck.sock`. External configuration must define that Unix
+socket server. The default command explicitly uses
+`/config/nginx/nginx.conf`, stderr logging, and `/run/nginx.pid`.
 
 ## Key Conventions
 
-### Snippet composition for server blocks
+- nginx configuration, GeoIPUpdate scheduling, TLS/QUIC material, and CrowdSec
+  runtime credentials are deployment responsibilities.
+- The CrowdSec Lua library is installed below `/usr/local/lua/crowdsec`; its ban
+  template is at `/var/lib/crowdsec/lua/templates/ban.html`.
+- Keep the local CrowdSec patch strict (`--fuzz=0`) and release archive
+  checksum verification intact.
+- Preserve arbitrary-UID operation. Alpine resolves relative module paths
+  through `/var/lib/nginx/modules`, so `/var/lib/nginx` must remain traversable.
+- Keep nginx temporary files, the PID, caches, and health socket below `/tmp`
+  or `/run`, never the image filesystem or `/config`.
+- FastCGI and PHP remain unsupported.
 
-The `snippets/server-base.conf` is the canonical single include for HTTPS server blocks. It pulls in:
+## Dockerfile
 
-```
-listen-https.conf  →  port 443 listen directives (including HTTP/2 & HTTP/3/QUIC)
-hsts.conf          →  configurable Strict-Transport-Security header
-geoip-block.conf   →  returns 403 if $access_allowed = no
-no-robots.conf     →  X-Robots-Tag header
-```
+`Dockerfile` is used for local and CI builds. The Dockerfile frontend and
+official Alpine stable branch are pinned by digest. Alpine packages float
+within that branch; `APK_REFRESH_DATE` records deliberate refreshes.
+`lua-resty-string` is extracted without installing its OpenResty dependency,
+so its package version remains explicitly tracked.
 
-Use `proxy.conf` for upstream proxy locations — it includes `proxy-common.conf` and `static-assets.conf`. HTTPS upstream locations should also include `proxy-ssl-verify.conf` when their certificates chain to the system trust bundle.
+## CI and Publishing
 
-### Site conf naming requirement
+The expected workflow is local verification followed by a direct push to
+`main` on the authoritative Forgejo repository; GitHub is the CI and reporting
+mirror. Mirrored pushes run ShellCheck, Hadolint, Actionlint, dependency-pin
+checks, amd64 integration tests, and smoke tests on native amd64 and arm64
+runners. Each runner tests the exact image digest it pushes; publishing combines
+only verified digests.
 
-Files placed in `/config/nginx/site-confs/` must end in `.conf` to be picked up
-by the nginx include glob.
-
-### GeoIP environment variables
-
-| Variable | Purpose |
-|---|---|
-| `GEOIPUPDATE_ACCOUNT_ID` | MaxMind account ID |
-| `GEOIPUPDATE_LICENSE_KEY` | MaxMind license key |
-| `GEOIPUPDATE_EDITION_IDS` | Database editions (default: `GeoLite2-Country`) |
-
-`GEOIPUPDATE_ACCOUNT_ID`, `GEOIPUPDATE_LICENSE_KEY`, and `CROWDSEC_NGINX_API_KEY` support LinuxServer's `FILE__VARIABLE` convention (e.g., `FILE__GEOIPUPDATE_LICENSE_KEY=/run/secrets/maxmind_key`). `GEOIPUPDATE_EDITION_IDS` is a non-secret database selection setting.
-
-Generated GeoIPUpdate and CrowdSec credential files live under `/run`; read-only deployments require writable `/config` plus tmpfs mounts for `/run:exec` and `/tmp`.
-
-The LinuxServer base image supplies `PUID`, `PGID`, `TZ`, and `UMASK`. Explicit
-non-root operation uses the container runtime's `user` setting and requires a
-pre-writable `/config`; do not assume `PUID`/`PGID` change ownership in that
-mode. LinuxServer does not generally support combining read-only and non-root
-modes, but this image's integration suite tests its documented combined
-hardening profile.
-
-### Dockerfile
-
-`Dockerfile` is used for both local and CI builds. CI builds a multi-platform
-image for amd64 and arm64 via buildx; architecture-specific downloads select
-their artifact and checksum from the target Alpine architecture. The base image
-and Dockerfile frontend are pinned by digest. The Dockerfile cleans up default
-`/var/www` content for all platforms.
-
-### CI / Publishing
-
-The expected workflow is local verification followed by a direct push to `main` on the authoritative Forgejo repository; GitHub is the CI and reporting mirror. Relevant mirrored main pushes run ShellCheck, Hadolint, Actionlint, dependency-pin policy checks, amd64 integration tests, and core smoke tests on native amd64 and arm64 runners. Each runner pushes an image by immutable digest, tests that exact digest, and the publish job combines only verified digests. The weekly dependency-report workflow reports actionable source updates in one GitHub issue and compares fresh amd64 and arm64 Alpine package inventories with `latest`; it never publishes or opens pull requests. `scripts/check-updates.sh --update` resolves every source before applying queued pin and checksum updates, and bumps `APK_REFRESH_DATE` when floating Alpine packages changed, leaving a local diff for review. GeoIPUpdate and the CrowdSec bouncer are fixed and checksum-verified. GitHub Actions remain pinned to immutable commit SHAs. Published images are tagged as both `latest` and `sha-<short-sha>-<run-id>`, with SBOM and provenance attestations attached.
+The weekly dependency report tracks the Dockerfile frontend, official Alpine
+base, CrowdSec bouncer, GitHub Actions, CI images, and fresh Alpine package
+inventories. `scripts/check-updates.sh --update` resolves dependencies before
+applying queued pin and checksum changes and leaves a local diff for review.

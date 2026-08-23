@@ -7,7 +7,6 @@ on:
       - Dockerfile
       - .dockerignore
       - .hadolint.yaml
-      - root/**
       - patches/**
       - scripts/**
       - tests/**

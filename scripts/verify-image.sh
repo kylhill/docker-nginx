@@ -10,7 +10,8 @@ SKIP_BUILD="${SKIP_BUILD:-0}"
 LOG_ERROR_REGEX="${LOG_ERROR_REGEX:-\\[(emerg|alert|crit|error)\\]|^ERROR:|^FATAL:}"
 KEEP_CONTAINER="${KEEP_CONTAINER:-0}"
 
-CONFIG_VOLUME="${CONFIG_VOLUME:-${CONTAINER}-config}"
+REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CONFIG_DIR="$(mktemp -d)"
 NETWORK="${CONTAINER}-network"
 LOG_FILE="$(mktemp)"
 
@@ -18,11 +19,13 @@ cleanup() {
     if [ "${KEEP_CONTAINER}" != "1" ]; then
         docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true
         docker network rm "${NETWORK}" >/dev/null 2>&1 || true
-        docker volume rm "${CONFIG_VOLUME}" >/dev/null 2>&1 || true
     fi
+    rm -rf "${CONFIG_DIR}"
     rm -f "${LOG_FILE}"
 }
 trap cleanup EXIT
+
+cp -a "${REPOSITORY_ROOT}/tests/fixtures/config/." "${CONFIG_DIR}/"
 
 if [ "${SKIP_BUILD}" != "1" ]; then
     echo "Building ${IMAGE} from ${DOCKERFILE}..."
@@ -41,10 +44,9 @@ else
     echo "Using prebuilt image ${IMAGE}."
 fi
 
-docker volume create "${CONFIG_VOLUME}" >/dev/null
 docker network create "${NETWORK}" >/dev/null
 
-echo "Starting ${CONTAINER} with temporary /config..."
+echo "Starting ${CONTAINER} with externally managed configuration..."
 RUN_ARGS=()
 if [ -n "${PLATFORM}" ]; then
     RUN_ARGS+=(--platform "${PLATFORM}")
@@ -53,7 +55,10 @@ fi
 docker run -d \
     --name "${CONTAINER}" \
     --network "${NETWORK}" \
-    -v "${CONFIG_VOLUME}:/config" \
+    --read-only \
+    --tmpfs /run:exec \
+    --tmpfs /tmp \
+    -v "${CONFIG_DIR}:/config:ro" \
     "${RUN_ARGS[@]}" \
     "${IMAGE}" >/dev/null
 
@@ -76,10 +81,18 @@ done
     exit 1
 }
 
-echo "Validating nginx config inside running container..."
-docker exec "${CONTAINER}" nginx -t -e stderr
+echo "Validating the external nginx configuration..."
+docker exec "${CONTAINER}" nginx \
+    -c /config/nginx/nginx.conf \
+    -e stderr \
+    -g 'pid /run/nginx.pid;' \
+    -t
 
-echo "Checking CrowdSec Lua modules can be loaded during nginx startup..."
+echo "Checking nginx is the container init process..."
+docker exec "${CONTAINER}" sh -c \
+    'test "$(cat /proc/1/comm)" = nginx'
+
+echo "Checking CrowdSec Lua modules can be loaded..."
 docker exec "${CONTAINER}" sh -lc 'cat > /tmp/crowdsec-lua-load-test.conf <<'"'"'EOF'"'"'
 include /etc/nginx/modules/*.conf;
 pid /tmp/crowdsec-lua-load-test.pid;
@@ -97,8 +110,8 @@ http {
     }
 }
 EOF
-nginx -c /tmp/crowdsec-lua-load-test.conf
-nginx -c /tmp/crowdsec-lua-load-test.conf -s quit'
+nginx -c /tmp/crowdsec-lua-load-test.conf -e stderr
+nginx -c /tmp/crowdsec-lua-load-test.conf -e stderr -s quit'
 
 docker logs "${CONTAINER}" >"${LOG_FILE}" 2>&1 || true
 if grep -Eiq "${LOG_ERROR_REGEX}" "${LOG_FILE}"; then
@@ -107,4 +120,11 @@ if grep -Eiq "${LOG_ERROR_REGEX}" "${LOG_FILE}"; then
     exit 1
 fi
 
-echo "Smoke verification passed: container became healthy and logs had no error matches."
+echo "Checking graceful PID 1 shutdown..."
+docker stop -t 10 "${CONTAINER}" >/dev/null
+[ "$(docker inspect -f '{{.State.ExitCode}}' "${CONTAINER}")" = 0 ] || {
+    echo "Container did not stop cleanly." >&2
+    exit 1
+}
+
+echo "Smoke verification passed."

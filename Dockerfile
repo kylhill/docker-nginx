@@ -1,13 +1,12 @@
 # syntax=docker/dockerfile:1@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
 
-# Inspired by https://github.com/linuxserver/docker-baseimage-alpine-nginx/blob/master/Dockerfile
-ARG BASE_IMAGE=ghcr.io/linuxserver/baseimage-alpine:3.24@sha256:34c19f3f2345f1d231784e78db95e330ce198c267b10fe8daa88b6bded30636b
+ARG BASE_IMAGE=docker.io/library/alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 FROM ${BASE_IMAGE} AS runtime-packages
 
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 
 LABEL org.opencontainers.image.title="docker-nginx" \
-      org.opencontainers.image.description="nginx reverse proxy on linuxserver.io Alpine base image" \
+      org.opencontainers.image.description="nginx reverse proxy on Alpine Linux" \
       org.opencontainers.image.url="https://github.com/kylhill/docker-nginx" \
       org.opencontainers.image.source="https://github.com/kylhill/docker-nginx" \
       org.opencontainers.image.documentation="https://github.com/kylhill/docker-nginx" \
@@ -36,17 +35,15 @@ RUN set -eux; \
     nginx-mod-http-geoip2 \
     nginx-mod-http-lua \
     nginx-mod-http-zstd \
-    openssl; \
+    tzdata; \
   tar -xzf "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk" \
     -C / usr/share/lua/common; \
   rm -f "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk"; \
   # Remove default config
   rm -f /etc/nginx/http.d/default.conf; \
   # Alpine stores its module symlink below this directory. Arbitrary-UID
-  # LinuxServer non-root mode needs traverse access to load nginx modules.
+  # operation needs traverse access to load nginx modules.
   chmod 0755 /var/lib/nginx; \
-  # Remove default /var/www content
-  find /var/www -mindepth 1 ! -path /var/www/favicon.ico -exec rm -rf {} +; \
   # apk.log records build timestamps and is not useful at runtime.
   rm -f /var/log/apk.log;
 
@@ -54,41 +51,10 @@ FROM runtime-packages AS final
 
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 
-# Install GeoIPUpdate
-ARG GEOIPUPDATE_VERSION=8.0.0
-ARG GEOIPUPDATE_AMD64_SHA256=941eb4dd8c1eafb6ee1d56ccd5f4c62ffbdaca5f65a9f9cadc4008c8d805f2a2
-ARG GEOIPUPDATE_ARM64_SHA256=76cedc3bad8b5f02a3ea42ac84c57d318a758377a07806f7a13189a382f16308
-RUN set -eux; \
-    # Select the release architecture from the target Alpine root filesystem.
-    # This works for native and emulated builds without relying on BuildKit's
-    # optional automatic TARGETARCH argument.
-    case "$(apk --print-arch)" in \
-      x86_64) RELEASE_ARCH="amd64"; GEOIPUPDATE_SHA256="$GEOIPUPDATE_AMD64_SHA256";; \
-      aarch64) RELEASE_ARCH="arm64"; GEOIPUPDATE_SHA256="$GEOIPUPDATE_ARM64_SHA256";; \
-      *) echo "Unsupported architecture: $(apk --print-arch)" >&2; exit 1;; \
-    esac; \
-    GEOIPUPDATE_ARCHIVE="/tmp/geoipupdate.tar.gz"; \
-    GEOIPUPDATE_DIR="/tmp/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${RELEASE_ARCH}"; \
-    \
-    # download and verify the tar.gz for the architecture
-    curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
-      --connect-timeout 15 -o "$GEOIPUPDATE_ARCHIVE" \
-      "https://github.com/maxmind/geoipupdate/releases/download/v${GEOIPUPDATE_VERSION}/geoipupdate_${GEOIPUPDATE_VERSION}_linux_${RELEASE_ARCH}.tar.gz"; \
-    echo "${GEOIPUPDATE_SHA256}  ${GEOIPUPDATE_ARCHIVE}" | sha256sum -c -; \
-    \
-    # extract and install the binary
-    tar -xzf "$GEOIPUPDATE_ARCHIVE" -C /tmp; \
-    install -m 0755 "$GEOIPUPDATE_DIR/geoipupdate" /usr/local/bin/geoipupdate; \
-    \
-    # cleanup
-    rm -f "$GEOIPUPDATE_ARCHIVE"; \
-    rm -rf "$GEOIPUPDATE_DIR"
-
 # Install CrowdSec nginx bouncer
 ARG CROWDSEC_BOUNCER_VERSION=1.2.1
 ARG CROWDSEC_BOUNCER_SHA256=ccd9a817e106173979ae7acc358f439e7f30a63283421e95281eaf01529d6bc5
-LABEL io.github.kylhill.docker-nginx.geoipupdate.version="${GEOIPUPDATE_VERSION}" \
-      io.github.kylhill.docker-nginx.crowdsec-bouncer.version="${CROWDSEC_BOUNCER_VERSION}"
+LABEL io.github.kylhill.docker-nginx.crowdsec-bouncer.version="${CROWDSEC_BOUNCER_VERSION}"
 RUN --mount=type=bind,source=patches/crowdsec-lua.patch,target=/tmp/crowdsec-lua.patch,ro \
     set -eux; \
     apk add --no-cache --virtual .crowdsec-build-deps \
@@ -129,14 +95,12 @@ RUN --mount=type=bind,source=patches/crowdsec-lua.patch,target=/tmp/crowdsec-lua
       del .crowdsec-build-deps; \
     rm -f /var/log/apk.log
 
-ENV GEOIPUPDATE_EDITION_IDS="GeoLite2-Country" \
-    S6_BEHAVIOUR_IF_STAGE2_FAILS="2"
-
-# copy local files
-COPY root/ /
-
 # ports
 EXPOSE 80/tcp 443/tcp 443/udp
 
+STOPSIGNAL SIGQUIT
+
 HEALTHCHECK --interval=5m --timeout=3s --start-period=30s --start-interval=5s --retries=3 \
   CMD ["curl", "--fail", "--silent", "--show-error", "--max-time", "2", "--unix-socket", "/run/nginx-healthcheck.sock", "http://localhost/health"]
+
+CMD ["nginx", "-c", "/config/nginx/nginx.conf", "-e", "stderr", "-g", "daemon off; pid /run/nginx.pid;"]
