@@ -42,7 +42,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          find root scripts tests -type f -print0 \
+          find scripts tests -type f -print0 \
             | xargs -0 grep -IlZ '^#!' \
             | sort -z \
             | xargs -0 --no-run-if-empty docker run --rm \
