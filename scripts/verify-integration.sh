@@ -3,9 +3,12 @@ set -Eeuo pipefail
 
 REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FIXTURE_ROOT="${REPOSITORY_ROOT}/tests/fixtures"
+BASIC_CONFIG_ROOT="${REPOSITORY_ROOT}/examples/basic/config"
 IMAGE="${IMAGE:-docker-nginx:verify}"
 PREFIX="${PREFIX:-docker-nginx-integration-$$}"
 TEST_CASES="${TEST_CASES:-contract,enabled,nonroot}"
+CHECK_LUA_MODULES="${CHECK_LUA_MODULES:-0}"
+LOG_ERROR_REGEX="${LOG_ERROR_REGEX:-\\[(emerg|alert|crit|error)\\]|^ERROR:|^FATAL:}"
 TEST_ROOT="$(mktemp -d)"
 
 declare -a CONTAINERS=()
@@ -84,7 +87,31 @@ parse_test_cases() {
 prepare_config() {
     local destination="$1"
     mkdir -p "${destination}"
-    cp -a "${FIXTURE_ROOT}/config/." "${destination}/"
+    cp -a "${BASIC_CONFIG_ROOT}/." "${destination}/"
+}
+
+check_lua_modules() {
+    local container="$1"
+
+    docker exec "${container}" sh -lc 'cat > /tmp/crowdsec-lua-load-test.conf <<'"'"'EOF'"'"'
+include /etc/nginx/modules/*.conf;
+pid /tmp/crowdsec-lua-load-test.pid;
+error_log stderr;
+events {}
+http {
+    lua_package_path "/usr/local/lua/crowdsec/?.lua;/usr/share/lua/common/?.lua;/usr/share/lua/common/?/init.lua;;";
+    lua_package_cpath "/usr/local/lib/lua/5.1/?.so;;";
+    lua_shared_dict crowdsec_cache 1m;
+    init_by_lua_block {
+        require "cjson"
+        require "resty.http"
+        require "resty.openssl.x509.chain"
+        require "crowdsec"
+    }
+}
+EOF
+nginx -c /tmp/crowdsec-lua-load-test.conf -e stderr
+nginx -c /tmp/crowdsec-lua-load-test.conf -e stderr -s quit'
 }
 
 test_contract() {
@@ -122,6 +149,12 @@ test_contract() {
         -e stderr \
         -g 'pid /run/nginx.pid;' \
         -t || fail "external configuration validation failed"
+    if [ "${CHECK_LUA_MODULES}" = 1 ]; then
+        check_lua_modules "${target}" || fail "CrowdSec Lua modules could not be loaded"
+        if docker logs "${target}" 2>&1 | grep -Eiq "${LOG_ERROR_REGEX}"; then
+            fail "container logs matched error regex: ${LOG_ERROR_REGEX}"
+        fi
+    fi
     docker stop -t 10 "${target}" >/dev/null
     [ "$(docker inspect -f '{{.State.ExitCode}}' "${target}")" = 0 ] ||
         fail "nginx did not stop cleanly through SIGQUIT"
@@ -132,11 +165,13 @@ prepare_enabled_environment() {
     local banned_ip lapi="$2"
 
     prepare_config "${config_dir}"
-    rm "${config_dir}/nginx/site-confs/smoke.conf"
+    rm "${config_dir}/nginx/site-confs/example.conf"
     cp "${FIXTURE_ROOT}/integration.conf" "${config_dir}/nginx/site-confs/"
     cp "${FIXTURE_ROOT}/geoip2.conf" "${config_dir}/nginx/http.d/"
     cp "${FIXTURE_ROOT}/crowdsec.conf" "${config_dir}/nginx/http.d/crowdsec-bouncer.conf"
-    mkdir -p "${config_dir}/crowdsec" "${config_dir}/keys"
+    mkdir -p "${config_dir}/crowdsec" "${config_dir}/keys" \
+        "${config_dir}/nginx/snippets"
+    cp "${FIXTURE_ROOT}/hsts.conf" "${config_dir}/nginx/snippets/"
 
     docker run --rm --network none \
         -v "${config_dir}:/config" \

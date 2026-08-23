@@ -1,0 +1,26 @@
+services:
+  nginx:
+    image: ghcr.io/kylhill/docker-nginx:latest
+    restart: unless-stopped
+    stop_grace_period: 30s
+    read_only: true
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges=true
+    ports:
+      - "80:8080/tcp"
+    volumes:
+      - type: bind
+        source: ./config
+        target: /config
+        read_only: true
+      - type: tmpfs
+        target: /run
+        tmpfs:
+          mode: 0777
+      - type: tmpfs
+        target: /tmp
+        tmpfs:
+          mode: 01777

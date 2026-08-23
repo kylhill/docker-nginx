@@ -29,18 +29,8 @@ Send `SIGHUP` to the container to reload a validated configuration.
 
 The image health check requests `/health` through
 `/run/nginx-healthcheck.sock`. The external nginx configuration must define a
-matching server, for example:
-
-```nginx
-server {
-    listen unix:/run/nginx-healthcheck.sock;
-    access_log off;
-
-    location = /health {
-        return 204;
-    }
-}
-```
+matching server. The supported basic example provides the canonical
+[`healthcheck.conf`](examples/basic/config/nginx/http.d/healthcheck.conf).
 
 ## CrowdSec
 
@@ -63,16 +53,18 @@ of `/config` or through another deployment-specific path.
 
 ## Compose example
 
-`compose.example.yml` demonstrates the supported hardened runtime. Prepare the
-complete `./config` tree before starting it:
+[`examples/basic`](examples/basic) is a complete, copy-ready configuration for
+the supported hardened runtime. It listens on container port 8080 and publishes
+it as host port 80. Start it from the example directory:
 
 ```bash
+cd examples/basic
 docker compose up -d
 ```
 
-The selected UID/GID must be able to read the configuration and bind the
-published ports. The example enables unprivileged low-port binding through the
-container sysctl.
+The selected UID/GID must be able to read the configuration. The root
+filesystem and configuration are read-only; writable tmpfs mounts provide the
+runtime paths used by nginx.
 
 ## Build and verification
 
@@ -95,10 +87,11 @@ scripts/verify-image.sh
 scripts/verify-integration.sh
 ```
 
-The smoke test supplies external fixture configuration, waits for health,
-validates nginx and the CrowdSec Lua dependencies, confirms nginx is PID 1, and
-checks graceful shutdown. The integration suite covers the required-config
-failure, CrowdSec enforcement, TLS/HTTP/2, and read-only arbitrary-UID mode.
+The smoke test builds the image and runs the integration suite's `contract`
+case against the basic example configuration. It waits for health, validates
+nginx and the CrowdSec Lua dependencies, confirms nginx is PID 1, and checks
+graceful shutdown. The full integration suite additionally covers CrowdSec
+enforcement, TLS/HTTP/2, and read-only arbitrary-UID mode.
 Select cases with `TEST_CASES=contract`, `TEST_CASES=enabled`, or
 `TEST_CASES=nonroot`.
 
