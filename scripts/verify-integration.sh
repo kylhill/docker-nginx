@@ -267,6 +267,7 @@ test_enabled_features() {
 test_nonroot() {
     local target="${PREFIX}-nonroot"
     local config_dir="${TEST_ROOT}/nonroot-config"
+    local reload_seen=false
 
     PHASE="arbitrary-UID read-only operation"
     echo "Checking arbitrary-UID operation with read-only configuration..."
@@ -294,6 +295,21 @@ test_nonroot() {
         -e stderr \
         -g 'pid /run/nginx.pid;' \
         -t || fail "nginx validation failed under the arbitrary UID"
+    docker kill --signal HUP "${target}" >/dev/null
+    for ((i = 0; i < 10; i++)); do
+        if docker logs "${target}" 2>&1 | grep -F 'reconfiguring' >/dev/null; then
+            reload_seen=true
+            break
+        fi
+        sleep 1
+    done
+    [ "${reload_seen}" = true ] ||
+        fail "nginx did not reload after SIGHUP under the arbitrary UID"
+    [ "$(docker inspect -f '{{.State.Running}}' "${target}")" = true ] ||
+        fail "nginx stopped after SIGHUP under the arbitrary UID"
+    docker stop -t 10 "${target}" >/dev/null
+    [ "$(docker inspect -f '{{.State.ExitCode}}' "${target}")" = 0 ] ||
+        fail "nginx did not stop cleanly under the arbitrary UID"
 }
 
 parse_test_cases

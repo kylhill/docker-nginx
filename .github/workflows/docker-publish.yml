@@ -10,6 +10,7 @@ on:
       - patches/**
       - scripts/**
       - tests/**
+      - examples/**
       - .github/workflows/**
   workflow_dispatch:
 
