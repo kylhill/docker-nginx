@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 
 ARG BASE_IMAGE=docker.io/library/alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 FROM ${BASE_IMAGE} AS runtime-packages
@@ -16,7 +16,7 @@ LABEL org.opencontainers.image.title="docker-nginx" \
 
 # install packages
 # Records an intentional refresh of the floating Alpine package set.
-ARG APK_REFRESH_DATE=2026-07-31
+ARG APK_REFRESH_DATE=2026-08-23
 ARG LUA_RESTY_STRING_VERSION=0.15-r1
 RUN set -eux; \
   : "${APK_REFRESH_DATE}"; \
@@ -78,7 +78,7 @@ RUN --mount=type=bind,source=patches/crowdsec-lua.patch,target=/tmp/crowdsec-lua
     # install Lua library files
     install -Dm 0644 "$CROWDSEC_DIR/lua-mod/lib/crowdsec.lua" \
       /usr/local/lua/crowdsec/crowdsec.lua; \
-    install -d -m 0755 /usr/local/lua/crowdsec/plugins/crowdsec; \
+    install -Dpm 0755 /usr/local/lua/crowdsec/plugins/crowdsec; \
     install -m 0644 "$CROWDSEC_DIR"/lua-mod/lib/plugins/crowdsec/*.lua \
       /usr/local/lua/crowdsec/plugins/crowdsec/; \
     printf 'return "%s"\n' "$CROWDSEC_BOUNCER_VERSION" \

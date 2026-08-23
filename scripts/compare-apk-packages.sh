@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# sort(1) and comm(1) must use bytewise ordering. In UTF-8 locales, sort's
+# last-resort byte comparison can order collation-equivalent package names
+# differently from comm, causing valid inventories to be rejected as unsorted.
+export LC_ALL=C
+
 REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PUBLISHED_IMAGE="${PUBLISHED_IMAGE:-ghcr.io/kylhill/docker-nginx:latest}"
 ARCHES="${ARCHES:-${APK_COMPARE_ARCHES:-}}"
