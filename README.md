@@ -21,6 +21,7 @@ or modifies files below `/config`.
 Use writable tmpfs mounts for `/run` and `/tmp` when the root filesystem is
 read-only. The main nginx configuration must direct its PID, temporary files,
 cache files, and Unix sockets to those writable paths.
+Neither tmpfs requires executable permissions.
 
 The image uses `SIGQUIT` as its Docker stop signal for graceful nginx shutdown.
 Send `SIGHUP` to the container to reload a validated configuration.

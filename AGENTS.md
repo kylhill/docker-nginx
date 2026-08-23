@@ -33,8 +33,8 @@ There is no init system or entrypoint script: Docker starts nginx directly with
 
 The image contains no nginx defaults and performs no configuration generation.
 A complete `/config/nginx/nginx.conf` must be mounted before startup. The image
-never writes below `/config`; read-only deployments provide writable tmpfs
-mounts for `/run:exec` and `/tmp`.
+never writes below `/config`; read-only deployments provide writable, noexec
+tmpfs mounts for `/run` and `/tmp`.
 
 The health check requests `/health` over
 `/run/nginx-healthcheck.sock`. External configuration must define that Unix

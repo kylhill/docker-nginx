@@ -137,8 +137,8 @@ test_contract() {
         --name "${target}" \
         --network none \
         --read-only \
-        --tmpfs /run:exec \
-        --tmpfs /tmp \
+        --tmpfs /run:rw,noexec,nosuid,nodev \
+        --tmpfs /tmp:rw,noexec,nosuid,nodev \
         -v "${config_dir}:/config:ro" \
         "${IMAGE}" >/dev/null
     wait_healthy "${target}"
@@ -173,12 +173,10 @@ prepare_enabled_environment() {
         "${config_dir}/nginx/snippets"
     cp "${FIXTURE_ROOT}/hsts.conf" "${config_dir}/nginx/snippets/"
 
-    docker run --rm --network none \
-        -v "${config_dir}:/config" \
-        --entrypoint openssl \
-        "${IMAGE}" req -new -x509 -days 1 -nodes \
-        -out /config/keys/cert.crt \
-        -keyout /config/keys/cert.key \
+    command -v openssl >/dev/null || fail "openssl is required for the TLS fixture"
+    openssl req -new -x509 -days 1 -nodes \
+        -out "${config_dir}/keys/cert.crt" \
+        -keyout "${config_dir}/keys/cert.key" \
         -subj /CN=localhost \
         -addext subjectAltName=DNS:localhost >/dev/null 2>&1
 
@@ -235,8 +233,8 @@ test_enabled_features() {
         --hostname target \
         --network "${NETWORK}" \
         --read-only \
-        --tmpfs /run:exec \
-        --tmpfs /tmp \
+        --tmpfs /run:rw,noexec,nosuid,nodev \
+        --tmpfs /tmp:rw,noexec,nosuid,nodev \
         -v "${config_dir}:/config:ro" \
         "${IMAGE}" >/dev/null
     wait_healthy "${target}"
@@ -284,8 +282,8 @@ test_nonroot() {
         --read-only \
         --cap-drop ALL \
         --security-opt no-new-privileges=true \
-        --tmpfs /run:exec,uid=1000,gid=1000 \
-        --tmpfs /tmp:uid=1000,gid=1000 \
+        --tmpfs /run:rw,noexec,nosuid,nodev,uid=1000,gid=1000 \
+        --tmpfs /tmp:rw,noexec,nosuid,nodev,uid=1000,gid=1000 \
         -v "${config_dir}:/config:ro" \
         "${IMAGE}" >/dev/null
     wait_healthy "${target}"

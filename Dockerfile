@@ -35,7 +35,6 @@ RUN set -eux; \
     nginx-mod-http-geoip2 \
     nginx-mod-http-lua \
     nginx-mod-http-zstd \
-    openssl \
     tzdata; \
   tar -xzf "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk" \
     -C / usr/share/lua/common; \
