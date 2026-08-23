@@ -35,6 +35,7 @@ RUN set -eux; \
     nginx-mod-http-geoip2 \
     nginx-mod-http-lua \
     nginx-mod-http-zstd \
+    openssl \
     tzdata; \
   tar -xzf "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk" \
     -C / usr/share/lua/common; \
@@ -78,7 +79,7 @@ RUN --mount=type=bind,source=patches/crowdsec-lua.patch,target=/tmp/crowdsec-lua
     # install Lua library files
     install -Dm 0644 "$CROWDSEC_DIR/lua-mod/lib/crowdsec.lua" \
       /usr/local/lua/crowdsec/crowdsec.lua; \
-    install -Dpm 0755 /usr/local/lua/crowdsec/plugins/crowdsec; \
+    install -d -m 0755 /usr/local/lua/crowdsec/plugins/crowdsec; \
     install -m 0644 "$CROWDSEC_DIR"/lua-mod/lib/plugins/crowdsec/*.lua \
       /usr/local/lua/crowdsec/plugins/crowdsec/; \
     printf 'return "%s"\n' "$CROWDSEC_BOUNCER_VERSION" \
