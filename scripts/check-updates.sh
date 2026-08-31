@@ -322,7 +322,7 @@ update_release_version() {
         queue_replacement "ARG ${variable}=${current}" \
             "ARG ${variable}=${normalized}" "${DOCKERFILE}"
     fi
-    printf '%s\n' "${normalized}"
+    LATEST_RELEASE_VERSION="${normalized}"
 }
 
 update_buildx() {
@@ -579,23 +579,33 @@ emit_report() {
     updates="$(awk -F '\t' '$5 == "update" { count++ } END { print count + 0 }' "${RECORDS_FILE}")"
     case "${FORMAT}" in
         text)
-            printf '%-10s %-48s %-82s %s\n' TYPE DEPENDENCY CURRENT LATEST
-            awk -F '\t' '{ printf "%-10s %-48s %-82s %s\n", $1, $2, $3, $4 }' "${RECORDS_FILE}"
+            if ((updates > 0)); then
+                printf '%-10s %-48s %-82s %s\n' TYPE DEPENDENCY CURRENT LATEST
+                awk -F '\t' '$5 == "update" {
+                    printf "%-10s %-48s %-82s %s\n", $1, $2, $3, $4
+                }' "${RECORDS_FILE}"
+            fi
             echo "Updates available: ${updates}"
             ;;
         markdown)
             echo "<!-- updates-available:$([[ "${updates}" -gt 0 ]] && echo true || echo false) -->"
             echo "## Source-controlled dependencies"
             echo
-            echo "| Type | Dependency | Current | Latest | Status |"
-            echo "|---|---|---|---|---|"
-            awk -F '\t' '{ printf "| `%s` | `%s` | `%s` | `%s` | %s |\n", $1, $2, $3, $4, $5 }' "${RECORDS_FILE}"
+            if ((updates > 0)); then
+                echo "| Type | Dependency | Current | Latest | Status |"
+                echo "|---|---|---|---|---|"
+                awk -F '\t' '$5 == "update" {
+                    printf "| `%s` | `%s` | `%s` | `%s` | %s |\n", $1, $2, $3, $4, $5
+                }' "${RECORDS_FILE}"
+            else
+                echo "No source-controlled dependency updates are available."
+            fi
             echo
             echo "Run \`scripts/check-updates.sh --update\` locally to apply all available updates."
             ;;
         json)
             jq -Rn --argjson count "${updates}" '
-                [inputs | split("\t") | {
+                [inputs | split("\t") | select(.[4] == "update") | {
                     type: .[0], dependency: .[1], current: .[2],
                     latest: .[3], status: .[4]
                 }] | {updates_available: ($count > 0), update_count: $count, dependencies: .}
@@ -614,9 +624,9 @@ update_image_pin moby/buildkit moby/buildkit release
 update_image_pin koalaman/shellcheck koalaman/shellcheck release
 update_image_pin ghcr.io/hadolint/hadolint hadolint/hadolint release-debian
 update_image_pin rhysd/actionlint rhysd/actionlint release-no-v
-crowdsec_version="$(update_release_version \
-    CrowdSec crowdsecurity/cs-nginx-bouncer CROWDSEC_BOUNCER_VERSION tags)"
-update_crowdsec_checksum "${crowdsec_version}"
+update_release_version \
+    CrowdSec crowdsecurity/cs-nginx-bouncer CROWDSEC_BOUNCER_VERSION tags
+update_crowdsec_checksum "${LATEST_RELEASE_VERSION}"
 compare_apk_and_refresh
 apply_replacements
 emit_report
