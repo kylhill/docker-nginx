@@ -53,7 +53,7 @@ SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 
 # Install CrowdSec nginx bouncer
 ARG CROWDSEC_BOUNCER_VERSION=1.2.1
-ARG CROWDSEC_BOUNCER_SHA256=ccd9a817e106173979ae7acc358f439e7f30a63283421e95281eaf01529d6bc5
+ARG CROWDSEC_BOUNCER_SHA256=10876f49e78cb7e3d03340d9f80a6586375ccd230acda2fe5e994b7ade2bd3db
 LABEL io.github.kylhill.docker-nginx.crowdsec-bouncer.version="${CROWDSEC_BOUNCER_VERSION}"
 RUN --mount=type=bind,source=patches/crowdsec-lua.patch,target=/tmp/crowdsec-lua.patch,ro \
     set -eux; \
