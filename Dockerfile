@@ -16,7 +16,7 @@ LABEL org.opencontainers.image.title="docker-nginx" \
 
 # install packages
 # Records an intentional refresh of the floating Alpine package set.
-ARG APK_REFRESH_DATE=2026-08-23
+ARG APK_REFRESH_DATE=2026-09-08
 ARG LUA_RESTY_STRING_VERSION=0.15-r1
 RUN set -eux; \
   : "${APK_REFRESH_DATE}"; \
