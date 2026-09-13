@@ -17,7 +17,9 @@ jobs:
       LOG_LEVEL: info
       RENOVATE_CONTAINERBASE_DIR: /tmp/renovate/containerbase
       RENOVATE_ENDPOINT: https://git.tacomafia.net/api/v1
-      RENOVATE_INTERNAL_HOST_ACCESS: allow
+      RENOVATE_GITHUB_COM_TOKEN: ${{ secrets.RENOVATE_GITHUB_COM_TOKEN }}
+      RENOVATE_HOST_RULES: '[{"hostType":"forgejo","matchHost":"https://git.tacomafia.net/","allowInternal":true}]'
+      RENOVATE_INTERNAL_HOST_ACCESS: block
       RENOVATE_ONBOARDING: "false"
       RENOVATE_PLATFORM: forgejo
       RENOVATE_REPOSITORIES: kylhill/docker-nginx
