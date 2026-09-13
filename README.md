@@ -98,19 +98,15 @@ Select cases with `TEST_CASES=contract`, `TEST_CASES=enabled`, or
 
 ## Dependency updates
 
-The Dockerfile frontend, official Alpine base, CrowdSec bouncer, GitHub
-Actions, and CI helper images are pinned. Alpine packages float within the
-pinned stable branch; `APK_REFRESH_DATE` records intentional package refreshes.
+The Dockerfile frontend, official Alpine base, direct Alpine packages, and
+CrowdSec bouncer archive are pinned. Renovate runs weekly on the authoritative
+Forgejo repository and opens pull requests for Dockerfile dependency updates.
+The Alpine base and package pins are grouped so a stable-branch transition is
+applied atomically. GitHub Actions and CI helper images are intentionally
+outside Renovate's scope.
+
 `lua-resty-string` is extracted without its OpenResty dependency, so its Alpine
-package version is tracked explicitly.
-
-Check or apply dependency updates locally:
-
-```bash
-scripts/check-updates.sh --check
-scripts/check-updates.sh --update
-```
-
-The weekly dependency report compares fresh amd64 and arm64 package inventories
-with the published `latest` image. Publishing combines only platform digests
-that passed their native smoke tests; amd64 also runs the integration suite.
+package is pinned and updated with the other direct APK dependencies. The
+CrowdSec release version and archive checksum are updated together. Publishing
+combines only platform digests that passed their native smoke tests; amd64 also
+runs the integration suite.

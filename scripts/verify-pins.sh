@@ -33,13 +33,23 @@ done < <(grep -hEo 'uses:[[:space:]]+[^./][^[:space:]]+' \
 
 dockerfile_args="$(sed -nE 's/^ARG ([A-Z0-9_]+)=.*/\1/p' "${DOCKERFILE}" | sort)"
 expected_dockerfile_args="$(printf '%s\n' \
-    APK_REFRESH_DATE \
     BASE_IMAGE \
+    CURL_VERSION \
     CROWDSEC_BOUNCER_SHA256 \
     CROWDSEC_BOUNCER_VERSION \
-    LUA_RESTY_STRING_VERSION | sort)"
+    LUA5_1_CJSON_VERSION \
+    LUA_RESTY_HTTP_VERSION \
+    LUA_RESTY_OPENSSL_VERSION \
+    LUA_RESTY_STRING_VERSION \
+    NGINX_MOD_HTTP_BROTLI_VERSION \
+    NGINX_MOD_HTTP_GEOIP2_VERSION \
+    NGINX_MOD_HTTP_LUA_VERSION \
+    NGINX_MOD_HTTP_ZSTD_VERSION \
+    NGINX_VERSION \
+    PATCH_VERSION \
+    TZDATA_VERSION | sort)"
 [[ "${dockerfile_args}" == "${expected_dockerfile_args}" ]] || {
-    echo "Dockerfile dependency ARG inventory changed; update check-updates.sh." >&2
+    echo "Dockerfile dependency ARG inventory changed; update verify-pins.sh and renovate.json." >&2
     diff -u <(printf '%s\n' "${expected_dockerfile_args}") \
         <(printf '%s\n' "${dockerfile_args}") >&2 || true
     exit 1

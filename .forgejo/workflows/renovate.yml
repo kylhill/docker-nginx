@@ -1,0 +1,28 @@
+---
+name: Renovate
+
+on:
+  schedule:
+    - cron: "32 9 * * 1"
+  workflow_dispatch:
+
+jobs:
+  renovate:
+    runs-on: oci-deps
+    container:
+      image: docker.io/renovate/renovate:latest
+      volumes:
+        - /opt/renovate-cache:/tmp/renovate/containerbase
+    env:
+      LOG_LEVEL: info
+      RENOVATE_CONTAINERBASE_DIR: /tmp/renovate/containerbase
+      RENOVATE_ENDPOINT: https://git.tacomafia.net/api/v1
+      RENOVATE_INTERNAL_HOST_ACCESS: allow
+      RENOVATE_ONBOARDING: "false"
+      RENOVATE_PLATFORM: forgejo
+      RENOVATE_REPOSITORIES: kylhill/docker-nginx
+      RENOVATE_REQUIRE_CONFIG: required
+      RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+    steps:
+      - name: Update dependencies
+        run: renovate

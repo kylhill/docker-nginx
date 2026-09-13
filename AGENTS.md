@@ -58,10 +58,9 @@ socket server. The default command explicitly uses
 ## Dockerfile
 
 `Dockerfile` is used for local and CI builds. The Dockerfile frontend and
-official Alpine stable branch are pinned by digest. Alpine packages float
-within that branch; `APK_REFRESH_DATE` records deliberate refreshes.
-`lua-resty-string` is extracted without installing its OpenResty dependency,
-so its package version remains explicitly tracked.
+official Alpine stable branch are pinned by digest. Direct Alpine packages are
+version-pinned and managed by Renovate. `lua-resty-string` is extracted without
+installing its OpenResty dependency.
 
 ## CI and Publishing
 
@@ -72,7 +71,7 @@ checks, amd64 integration tests, and smoke tests on native amd64 and arm64
 runners. Each runner tests the exact image digest it pushes; publishing combines
 only verified digests.
 
-The weekly dependency report tracks the Dockerfile frontend, official Alpine
-base, CrowdSec bouncer, GitHub Actions, CI images, and fresh Alpine package
-inventories. `scripts/check-updates.sh --update` resolves dependencies before
-applying queued pin and checksum changes and leaves a local diff for review.
+The weekly Forgejo Renovate workflow updates only Dockerfile dependencies. It
+tracks the Dockerfile frontend, official Alpine base, direct Alpine packages,
+and the CrowdSec bouncer version and archive checksum. GitHub Actions and CI
+helper image pins remain manually managed.

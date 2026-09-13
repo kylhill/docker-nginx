@@ -1,0 +1,57 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "enabledManagers": [
+    "dockerfile",
+    "custom.regex"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update pinned Alpine packages in the Dockerfile",
+      "managerFilePatterns": [
+        "/^Dockerfile$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>apk) depName=(?<depName>[^\\s]+)\\nARG [A-Z0-9_]+_VERSION=(?<currentValue>[^\\s]+)"
+      ],
+      "registryUrlTemplate": "https://dl-cdn.alpinelinux.org/alpine?branch=latest-stable&components=main,community&arch=x86_64"
+    },
+    {
+      "customType": "regex",
+      "description": "Update the CrowdSec bouncer release and archive checksum",
+      "managerFilePatterns": [
+        "/^Dockerfile$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=github-release-attachments depName=crowdsecurity/cs-nginx-bouncer\\nARG CROWDSEC_BOUNCER_VERSION=(?<currentValue>[^\\s]+)\\nARG CROWDSEC_BOUNCER_SHA256=(?<currentDigest>[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "github-release-attachments",
+      "depNameTemplate": "crowdsecurity/cs-nginx-bouncer",
+      "extractVersionTemplate": "^v(?<version>.*)$",
+      "versioningTemplate": "semver"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchDatasources": [
+        "apk"
+      ],
+      "groupName": "Alpine base and packages"
+    },
+    {
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "/(^|\\/)alpine$/"
+      ],
+      "groupName": "Alpine base and packages"
+    }
+  ],
+  "automerge": false,
+  "dependencyDashboard": false,
+  "prConcurrentLimit": 3
+}

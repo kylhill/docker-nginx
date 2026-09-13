@@ -14,28 +14,48 @@ LABEL org.opencontainers.image.title="docker-nginx" \
       org.opencontainers.image.vendor="Kyle Hill" \
       org.opencontainers.image.licenses="GPL-3.0-only"
 
-# install packages
-# Records an intentional refresh of the floating Alpine package set.
-ARG APK_REFRESH_DATE=2026-09-08
+# renovate: datasource=apk depName=curl
+ARG CURL_VERSION=8.22.0-r0
+# renovate: datasource=apk depName=lua-resty-http
+ARG LUA_RESTY_HTTP_VERSION=0.17.2-r0
+# renovate: datasource=apk depName=lua-resty-openssl
+ARG LUA_RESTY_OPENSSL_VERSION=1.6.1-r0
+# renovate: datasource=apk depName=lua-resty-string
 ARG LUA_RESTY_STRING_VERSION=0.15-r1
+# renovate: datasource=apk depName=lua5.1-cjson
+ARG LUA5_1_CJSON_VERSION=2.1.0-r12
+# renovate: datasource=apk depName=nginx
+ARG NGINX_VERSION=1.30.4-r1
+# renovate: datasource=apk depName=nginx-mod-http-brotli
+ARG NGINX_MOD_HTTP_BROTLI_VERSION=1.30.4-r1
+# renovate: datasource=apk depName=nginx-mod-http-geoip2
+ARG NGINX_MOD_HTTP_GEOIP2_VERSION=1.30.4-r1
+# renovate: datasource=apk depName=nginx-mod-http-lua
+ARG NGINX_MOD_HTTP_LUA_VERSION=1.30.4-r1
+# renovate: datasource=apk depName=nginx-mod-http-zstd
+ARG NGINX_MOD_HTTP_ZSTD_VERSION=1.30.4-r1
+# renovate: datasource=apk depName=tzdata
+ARG TZDATA_VERSION=2026c-r0
 RUN set -eux; \
-  : "${APK_REFRESH_DATE}"; \
   # lua-resty-string declares an OpenResty-specific package dependency even
   # though nginx-mod-http-lua provides the same Lua runtime. Extract the
   # architecture-independent Lua files without installing a second nginx.
-  apk fetch --no-cache --no-progress --output /tmp lua-resty-string; \
+  ALPINE_ARCH="$(apk --print-arch)"; \
+  ALPINE_BRANCH="v$(cut -d. -f1,2 /etc/alpine-release)"; \
+  wget -q -O "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk" \
+    "https://dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}/community/${ALPINE_ARCH}/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk"; \
   test -f "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk"; \
   apk add --no-cache --no-progress \
-    curl \
-    lua-resty-http \
-    lua-resty-openssl \
-    lua5.1-cjson \
-    nginx \
-    nginx-mod-http-brotli \
-    nginx-mod-http-geoip2 \
-    nginx-mod-http-lua \
-    nginx-mod-http-zstd \
-    tzdata; \
+    "curl=${CURL_VERSION}" \
+    "lua-resty-http=${LUA_RESTY_HTTP_VERSION}" \
+    "lua-resty-openssl=${LUA_RESTY_OPENSSL_VERSION}" \
+    "lua5.1-cjson=${LUA5_1_CJSON_VERSION}" \
+    "nginx=${NGINX_VERSION}" \
+    "nginx-mod-http-brotli=${NGINX_MOD_HTTP_BROTLI_VERSION}" \
+    "nginx-mod-http-geoip2=${NGINX_MOD_HTTP_GEOIP2_VERSION}" \
+    "nginx-mod-http-lua=${NGINX_MOD_HTTP_LUA_VERSION}" \
+    "nginx-mod-http-zstd=${NGINX_MOD_HTTP_ZSTD_VERSION}" \
+    "tzdata=${TZDATA_VERSION}"; \
   tar -xzf "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk" \
     -C / usr/share/lua/common; \
   rm -f "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk"; \
@@ -52,13 +72,16 @@ FROM runtime-packages AS final
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 
 # Install CrowdSec nginx bouncer
+# renovate: datasource=apk depName=patch
+ARG PATCH_VERSION=2.8-r0
+# renovate: datasource=github-release-attachments depName=crowdsecurity/cs-nginx-bouncer
 ARG CROWDSEC_BOUNCER_VERSION=1.2.2
 ARG CROWDSEC_BOUNCER_SHA256=10876f49e78cb7e3d03340d9f80a6586375ccd230acda2fe5e994b7ade2bd3db
 LABEL io.github.kylhill.docker-nginx.crowdsec-bouncer.version="${CROWDSEC_BOUNCER_VERSION}"
 RUN --mount=type=bind,source=patches/crowdsec-lua.patch,target=/tmp/crowdsec-lua.patch,ro \
     set -eux; \
     apk add --no-cache --virtual .crowdsec-build-deps \
-      patch; \
+      "patch=${PATCH_VERSION}"; \
     CROWDSEC_ARCHIVE="/tmp/bouncer.tgz"; \
     CROWDSEC_DIR="/tmp/crowdsec-nginx-bouncer-v${CROWDSEC_BOUNCER_VERSION}"; \
     \
