@@ -12,6 +12,7 @@ LOG_ERROR_REGEX="${LOG_ERROR_REGEX:-\\[(emerg|alert|crit|error)\\]|^ERROR:|^FATA
 TEST_ROOT="$(mktemp -d)"
 
 declare -a CONTAINERS=()
+declare -a VOLUMES=()
 declare -a DIAGNOSTIC_CONTAINERS=()
 declare -a SELECTED_CASES=()
 NETWORK="${PREFIX}-network"
@@ -19,9 +20,12 @@ NETWORK_CREATED=false
 PHASE="environment setup"
 
 cleanup() {
-    local container
+    local container volume
     for container in "${CONTAINERS[@]}"; do
         docker rm -f "${container}" >/dev/null 2>&1 || true
+    done
+    for volume in "${VOLUMES[@]}"; do
+        docker volume rm "${volume}" >/dev/null 2>&1 || true
     done
     if [ "${NETWORK_CREATED}" = true ]; then
         docker network rm "${NETWORK}" >/dev/null 2>&1 || true
@@ -90,6 +94,25 @@ prepare_config() {
     cp -a "${BASIC_CONFIG_ROOT}/." "${destination}/"
 }
 
+prepare_fixture_volume() {
+    local source_dir="$1"
+    local volume="$2"
+    local staging="${volume}-staging"
+
+    docker volume create "${volume}" >/dev/null ||
+        fail "could not create fixture volume ${volume}"
+    VOLUMES+=("${volume}")
+    CONTAINERS+=("${staging}")
+    docker create --name "${staging}" --network none \
+        -v "${volume}:/fixture" "${IMAGE}" >/dev/null ||
+        fail "could not create fixture staging container ${staging}"
+    # Copy through the Docker API; fixture paths need not exist on the daemon host.
+    docker cp "${source_dir}/." "${staging}:/fixture" ||
+        fail "could not copy fixtures into ${volume}"
+    docker rm "${staging}" >/dev/null ||
+        fail "could not remove fixture staging container ${staging}"
+}
+
 check_lua_modules() {
     local container="$1"
 
@@ -118,6 +141,7 @@ test_contract() {
     local missing="${PREFIX}-missing-config"
     local target="${PREFIX}-contract"
     local config_dir="${TEST_ROOT}/contract-config"
+    local config_volume="${PREFIX}-contract-config"
     local exit_code
 
     PHASE="required configuration contract"
@@ -131,6 +155,7 @@ test_contract() {
         fail "missing-config error did not name /config/nginx/nginx.conf"
 
     prepare_config "${config_dir}"
+    prepare_fixture_volume "${config_dir}" "${config_volume}"
     CONTAINERS+=("${target}")
     DIAGNOSTIC_CONTAINERS=("${target}")
     docker run -d \
@@ -139,7 +164,7 @@ test_contract() {
         --read-only \
         --tmpfs /run:rw,noexec,nosuid,nodev \
         --tmpfs /tmp:rw,noexec,nosuid,nodev \
-        -v "${config_dir}:/config:ro" \
+        -v "${config_volume}:/config:ro" \
         "${IMAGE}" >/dev/null
     wait_healthy "${target}"
     docker exec "${target}" sh -c 'test "$(cat /proc/1/comm)" = nginx' ||
@@ -181,8 +206,9 @@ prepare_enabled_environment() {
         -addext subjectAltName=DNS:localhost >/dev/null 2>&1
 
     banned_ip="$(docker inspect -f "{{(index .NetworkSettings.Networks \"${NETWORK}\").IPAddress}}" "${PREFIX}-banned")"
+    mkdir -p "${TEST_ROOT}/lapi-config"
     sed "s/@BANNED_IP@/${banned_ip}/g" \
-        "${FIXTURE_ROOT}/crowdsec-lapi.conf.template" > "${TEST_ROOT}/crowdsec-lapi.conf"
+        "${FIXTURE_ROOT}/crowdsec-lapi.conf.template" > "${TEST_ROOT}/lapi-config/nginx.conf"
     sed "s/@LAPI@/${lapi}/g" \
         "${FIXTURE_ROOT}/crowdsec-nginx-bouncer.conf.template" \
         > "${config_dir}/crowdsec/crowdsec-nginx-bouncer.conf"
@@ -194,6 +220,8 @@ test_enabled_features() {
     local lapi="${PREFIX}-lapi"
     local target="${PREFIX}-target"
     local config_dir="${TEST_ROOT}/enabled-config"
+    local config_volume="${PREFIX}-enabled-config"
+    local lapi_volume="${PREFIX}-lapi-config"
     local banned_status response_headers response_body http_version lapi_status lapi_logs
 
     PHASE="feature-enabled environment"
@@ -206,16 +234,18 @@ test_enabled_features() {
         --entrypoint sleep "${IMAGE}" 86400 >/dev/null
 
     prepare_enabled_environment "${config_dir}" "${lapi}"
+    prepare_fixture_volume "${config_dir}" "${config_volume}"
+    prepare_fixture_volume "${TEST_ROOT}/lapi-config" "${lapi_volume}"
 
     CONTAINERS+=("${lapi}")
     DIAGNOSTIC_CONTAINERS=("${lapi}")
     docker run -d \
         --name "${lapi}" \
         --network "${NETWORK}" \
-        -v "${TEST_ROOT}/crowdsec-lapi.conf:/tmp/nginx.conf:ro" \
+        -v "${lapi_volume}:/config:ro" \
         --entrypoint nginx \
         "${IMAGE}" \
-        -c /tmp/nginx.conf -e stderr -g 'daemon off;' >/dev/null
+        -c /config/nginx.conf -e stderr -g 'daemon off;' >/dev/null
 
     lapi_status=
     for ((i = 0; i < 30; i++)); do
@@ -235,7 +265,7 @@ test_enabled_features() {
         --read-only \
         --tmpfs /run:rw,noexec,nosuid,nodev \
         --tmpfs /tmp:rw,noexec,nosuid,nodev \
-        -v "${config_dir}:/config:ro" \
+        -v "${config_volume}:/config:ro" \
         "${IMAGE}" >/dev/null
     wait_healthy "${target}"
 
@@ -267,12 +297,14 @@ test_enabled_features() {
 test_nonroot() {
     local target="${PREFIX}-nonroot"
     local config_dir="${TEST_ROOT}/nonroot-config"
+    local config_volume="${PREFIX}-nonroot-config"
     local reload_seen=false
 
     PHASE="arbitrary-UID read-only operation"
     echo "Checking arbitrary-UID operation with read-only configuration..."
     prepare_config "${config_dir}"
     chmod -R a+rX "${config_dir}"
+    prepare_fixture_volume "${config_dir}" "${config_volume}"
 
     CONTAINERS+=("${target}")
     DIAGNOSTIC_CONTAINERS=("${target}")
@@ -285,7 +317,7 @@ test_nonroot() {
         --security-opt no-new-privileges=true \
         --tmpfs /run:rw,noexec,nosuid,nodev,uid=1000,gid=1000 \
         --tmpfs /tmp:rw,noexec,nosuid,nodev,uid=1000,gid=1000 \
-        -v "${config_dir}:/config:ro" \
+        -v "${config_volume}:/config:ro" \
         "${IMAGE}" >/dev/null
     wait_healthy "${target}"
     [ "$(docker exec "${target}" id -u)" = 1000 ] ||

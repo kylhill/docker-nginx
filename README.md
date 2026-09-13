@@ -101,6 +101,13 @@ enforcement, TLS/HTTP/2, and read-only arbitrary-UID mode.
 Select cases with `TEST_CASES=contract`, `TEST_CASES=enabled`, or
 `TEST_CASES=nonroot`.
 
+Fixtures are copied through the Docker API (`docker cp`) into separate,
+per-run named volumes using stopped staging containers from the test image.
+Workloads mount those volumes read-only. Local and remote Docker daemons use
+the same transfer path; no shared job/daemon filesystem is required. Exit
+cleanup removes staging and workload containers before removing fixture volumes,
+including when verification fails.
+
 ## Forgejo publishing
 
 The Forgejo `docker-publish.yml` workflow runs on relevant pushes to `main` or
@@ -118,8 +125,8 @@ The job explicitly uses `node:24-alpine`, providing Node.js for
 `actions/checkout@v6`. Before checkout, a `sh` step installs Bash, Docker CLI
 and Buildx, Git, OpenSSL, and Python 3. The runner must provide Docker daemon
 access and support for building and running both architectures (including
-preconfigured QEMU/binfmt emulation for non-native containers). Test fixture
-bind-mount paths must be accessible to that daemon.
+preconfigured QEMU/binfmt emulation for non-native containers). Test fixtures
+are transferred through the Docker API, not host bind mounts.
 The job creates a per-run Docker context from the runner's connection settings,
 including TLS certificates, and passes it explicitly to Buildx. The builder and
 context are removed afterward only if their creation succeeded.

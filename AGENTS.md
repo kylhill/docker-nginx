@@ -30,6 +30,13 @@ nginx PID 1 operation, graceful shutdown, read-only mode, and arbitrary UIDs.
 Its `contract`, `enabled`, and `nonroot` cases can be selected with
 `TEST_CASES`; all run by default.
 
+Test fixtures use separate per-run named volumes populated with `docker cp`
+through stopped staging containers from `IMAGE`, without starting nginx.
+Keep workload configuration mounts read-only and preserve fixture permissions.
+No fixture paths need to be shared with the Docker daemon. Register created
+volumes and staging containers for EXIT cleanup; remove all staging/workload
+containers before volumes on both success and failure.
+
 ## Architecture
 
 The image is based directly on the official Alpine image. It packages nginx,
@@ -86,8 +93,8 @@ permissions, Docker daemon access, and support for building and running both arc
 (preconfigured emulation for non-native containers); unlike GitHub publishing,
 it does not promote exact tested digests.
 The job uses `node:24-alpine` and installs Bash, Docker CLI/Buildx, Git, OpenSSL,
-and Python 3 with `sh` before checkout. Fixture bind-mount paths must be visible
-to the Docker daemon.
+and Python 3 with `sh` before checkout. API-based fixture copying supports
+remote Docker daemons without shared filesystem paths.
 Before creating Buildx, the job snapshots the runner's Docker endpoint and TLS
 settings into a per-run Docker context and passes that context to the builder.
 Keep context and builder names distinct: Buildx also exposes contexts as builders.
