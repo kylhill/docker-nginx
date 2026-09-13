@@ -96,6 +96,33 @@ enforcement, TLS/HTTP/2, and read-only arbitrary-UID mode.
 Select cases with `TEST_CASES=contract`, `TEST_CASES=enabled`, or
 `TEST_CASES=nonroot`.
 
+## Forgejo publishing
+
+The Forgejo `docker-publish.yml` workflow runs on relevant pushes to `main` or
+manual dispatch. A single `oci-build` job builds and smoke-tests amd64 and arm64
+images, runs the full integration suite on amd64, then builds and pushes
+`linux/amd64,linux/arm64` images to
+`git.tacomafia.net/<owner>/<repository>` with `latest` and `sha-<12-character SHA>`
+tags. After successful publishing, retention keeps the newest 10 matching
+`sha-[a-f0-9]{12}` tags for the lowercase repository image, preserving `latest`,
+all nonmatching tags/digests, and other packages. Cleanup errors fail the job.
+Actual disk reclamation depends on Forgejo server cleanup/garbage collection,
+including removal of dangling container digests.
+
+The runner must provide Bash, Python 3, Docker with Buildx, a Node.js runtime compatible
+with `actions/checkout@v6`, and support for building and running both architectures
+(including preconfigured QEMU/binfmt emulation for non-native containers).
+Set the repository's `REGISTRY_TOKEN` Actions secret to
+a token with `write:package` scope and write permissions for the package owner.
+
+Run the offline retention tests with `python3 -m unittest discover -s tests`.
+
+This deliberately simpler workflow rebuilds for publishing after both
+architectures pass smoke tests and amd64 passes integration tests. It does not
+promote exact tested digests.
+The existing GitHub workflow remains unchanged and provides the stricter native
+multi-platform verification and GHCR publishing path.
+
 ## Dependency updates
 
 The Dockerfile frontend, official Alpine base, direct Alpine packages, and
@@ -107,6 +134,6 @@ outside Renovate's scope.
 
 `lua-resty-string` is extracted without its OpenResty dependency, so its Alpine
 package is pinned and updated with the other direct APK dependencies. The
-CrowdSec release version and archive checksum are updated together. Publishing
-combines only platform digests that passed their native smoke tests; amd64 also
-runs the integration suite.
+CrowdSec release version and archive checksum are updated together. GitHub
+publishing combines only platform digests that passed their native smoke tests;
+amd64 also runs the integration suite.

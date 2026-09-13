@@ -1,0 +1,118 @@
+---
+name: Build and Publish Docker image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - patches/**
+      - scripts/**
+      - tests/**
+      - examples/**
+      - .forgejo/workflows/docker-publish.yml
+  workflow_dispatch:
+
+concurrency:
+  group: docker-nginx-registry
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: oci-build
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      BUILDX_BUILDER: ci-${{ forgejo.run_id }}
+
+    steps:
+      - name: Checkout
+        uses: https://github.com/actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Create Buildx builder
+        run: |
+          docker buildx create \
+            --name "${BUILDX_BUILDER}" \
+            --driver docker-container \
+            --use
+
+      - name: Build and test amd64
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            --pull \
+            --load \
+            --tag docker-nginx:test-amd64 \
+            .
+
+          IMAGE=docker-nginx:test-amd64 \
+          PLATFORM=linux/amd64 \
+          SKIP_BUILD=1 \
+            scripts/verify-image.sh
+
+      - name: Build and test arm64
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
+            --pull \
+            --load \
+            --tag docker-nginx:test-arm64 \
+            .
+
+          IMAGE=docker-nginx:test-arm64 \
+          PLATFORM=linux/arm64 \
+          SKIP_BUILD=1 \
+            scripts/verify-image.sh
+
+      - name: Run integration tests
+        env:
+          IMAGE: docker-nginx:test-amd64
+        run: scripts/verify-integration.sh
+
+      - name: Log in to Forgejo registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+          REGISTRY_USERNAME: ${{ forgejo.repository_owner }}
+        run: |
+          printf '%s' "${REGISTRY_TOKEN}" |
+            docker login git.tacomafia.net \
+              --username "${REGISTRY_USERNAME}" \
+              --password-stdin
+
+      - name: Build and publish
+        env:
+          IMAGE: git.tacomafia.net/${{ forgejo.repository }}
+        run: |
+          set -euo pipefail
+
+          short_sha="${FORGEJO_SHA:0:12}"
+          IMAGE="${IMAGE,,}"
+
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --pull \
+            --tag "${IMAGE}:sha-${short_sha}" \
+            --tag "${IMAGE}:latest" \
+            --push \
+            .
+
+      - name: Retain newest 10 SHA releases
+        env:
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+          API_URL: https://git.tacomafia.net/api/v1
+          REPOSITORY: ${{ forgejo.repository }}
+        run: python3 scripts/cleanup-forgejo-packages.py
+
+      - name: Log out
+        if: always()
+        run: docker logout git.tacomafia.net
+
+      - name: Remove Buildx builder
+        if: always()
+        run: docker buildx rm "${BUILDX_BUILDER}"

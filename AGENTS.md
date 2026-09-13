@@ -17,7 +17,8 @@ scripts/verify-image.sh
 scripts/verify-integration.sh
 ```
 
-There are no unit tests. `scripts/verify-image.sh` is the core smoke test after
+Run offline retention unit tests with `python3 -m unittest discover -s tests`.
+`scripts/verify-image.sh` is the core smoke test after
 Dockerfile or container-runtime changes. `scripts/verify-integration.sh` covers
 the required external configuration contract, CrowdSec, TLS, HTTP/2, direct
 nginx PID 1 operation, graceful shutdown, read-only mode, and arbitrary UIDs.
@@ -70,6 +71,19 @@ mirror. Mirrored pushes run ShellCheck, Hadolint, Actionlint, dependency-pin
 checks, amd64 integration tests, and smoke tests on native amd64 and arm64
 runners. Each runner tests the exact image digest it pushes; publishing combines
 only verified digests.
+
+Forgejo also runs a deliberately simpler single-job publishing workflow on the
+`oci-build` runner. It smoke-tests amd64 and arm64 images and runs the full
+integration suite on amd64, then rebuilds and pushes amd64/arm64 images to
+`git.tacomafia.net` with `latest` and short-SHA tags. It requires the
+`REGISTRY_TOKEN` secret with `write:package` scope and package-owner write
+permissions, Python 3, and support for building and running both architectures
+(preconfigured emulation for non-native containers); unlike GitHub publishing,
+it does not promote exact tested digests.
+After publishing, retention keeps the newest 10 matching `sha-[a-f0-9]{12}`
+tags, preserving `latest`, nonmatching tags/digests, and other packages.
+Actual disk reclamation requires Forgejo server cleanup/GC, including dangling
+container digests.
 
 The weekly Forgejo Renovate workflow updates only Dockerfile dependencies. It
 tracks the Dockerfile frontend, official Alpine base, direct Alpine packages,
