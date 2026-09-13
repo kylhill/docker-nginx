@@ -232,8 +232,8 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(self.deletions(), [])
 
     def test_owner_is_encoded_as_one_path_component(self):
-        owner = "Ow/ner ?#%+é"
-        name = "image/name ?#%+é"
+        owner = "Ow/ner ?#%+\u00e9"
+        name = "image/name ?#%+\u00e9"
         self.serve([[]])
         self.helper.fetch_packages(API_URL, owner, name, TOKEN)
         parsed = urllib.parse.urlsplit(self.requests[0].full_url)
@@ -245,7 +245,7 @@ class CleanupTests(unittest.TestCase):
         )
 
     def test_cleanup_lowercases_repository_and_encodes_delete_path(self):
-        repository = "Ow Ner+%é/ImAge/Sub ?#%+É"
+        repository = "Ow Ner+%\u00e9/ImAge/Sub ?#%+\u00c9"
         owner, name = repository.lower().split("/", 1)
         inventory = [package("latest", name=name), *sha_packages(11, name=name)]
         self.serve([inventory, []])

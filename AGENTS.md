@@ -77,9 +77,12 @@ Forgejo also runs a deliberately simpler single-job publishing workflow on the
 integration suite on amd64, then rebuilds and pushes amd64/arm64 images to
 `git.tacomafia.net` with `latest` and short-SHA tags. It requires the
 `REGISTRY_TOKEN` secret with `write:package` scope and package-owner write
-permissions, Python 3, and support for building and running both architectures
+permissions, Docker daemon access, and support for building and running both architectures
 (preconfigured emulation for non-native containers); unlike GitHub publishing,
 it does not promote exact tested digests.
+The job uses `node:24-alpine` and installs Bash, Docker CLI/Buildx, Git, OpenSSL,
+and Python 3 with `sh` before checkout. Fixture bind-mount paths must be visible
+to the Docker daemon.
 After publishing, retention keeps the newest 10 matching `sha-[a-f0-9]{12}`
 tags, preserving `latest`, nonmatching tags/digests, and other packages.
 Actual disk reclamation requires Forgejo server cleanup/GC, including dangling

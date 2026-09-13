@@ -109,9 +109,12 @@ all nonmatching tags/digests, and other packages. Cleanup errors fail the job.
 Actual disk reclamation depends on Forgejo server cleanup/garbage collection,
 including removal of dangling container digests.
 
-The runner must provide Bash, Python 3, Docker with Buildx, a Node.js runtime compatible
-with `actions/checkout@v6`, and support for building and running both architectures
-(including preconfigured QEMU/binfmt emulation for non-native containers).
+The job explicitly uses `node:24-alpine`, providing Node.js for
+`actions/checkout@v6`. Before checkout, a `sh` step installs Bash, Docker CLI
+and Buildx, Git, OpenSSL, and Python 3. The runner must provide Docker daemon
+access and support for building and running both architectures (including
+preconfigured QEMU/binfmt emulation for non-native containers). Test fixture
+bind-mount paths must be accessible to that daemon.
 Set the repository's `REGISTRY_TOKEN` Actions secret to
 a token with `write:package` scope and write permissions for the package owner.
 
