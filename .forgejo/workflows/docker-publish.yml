@@ -30,6 +30,7 @@ jobs:
         shell: bash
     env:
       BUILDX_BUILDER: ci-${{ forgejo.run_id }}
+      BUILDX_CONTEXT: ci-context-${{ forgejo.run_id }}
 
     steps:
       - name: Install job tools
@@ -50,7 +51,7 @@ jobs:
 
       - name: Create Docker context
         id: docker_context
-        run: docker context create "${BUILDX_BUILDER}"
+        run: docker context create "${BUILDX_CONTEXT}"
 
       - name: Create Buildx builder
         id: builder
@@ -59,7 +60,7 @@ jobs:
             --name "${BUILDX_BUILDER}" \
             --driver docker-container \
             --use \
-            "${BUILDX_BUILDER}"
+            "${BUILDX_CONTEXT}"
 
       - name: Build and test amd64
         run: |
@@ -138,4 +139,4 @@ jobs:
 
       - name: Remove Docker context
         if: always() && steps.docker_context.outcome == 'success'
-        run: docker context rm "${BUILDX_BUILDER}"
+        run: docker context rm "${BUILDX_CONTEXT}"

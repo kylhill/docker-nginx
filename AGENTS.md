@@ -90,6 +90,7 @@ and Python 3 with `sh` before checkout. Fixture bind-mount paths must be visible
 to the Docker daemon.
 Before creating Buildx, the job snapshots the runner's Docker endpoint and TLS
 settings into a per-run Docker context and passes that context to the builder.
+Keep context and builder names distinct: Buildx also exposes contexts as builders.
 Cleanup removes only successfully created builders and contexts.
 After publishing, retention keeps the newest 10 matching `sha-[a-f0-9]{12}`
 tags, preserving `latest`, nonmatching tags/digests, and other packages.
