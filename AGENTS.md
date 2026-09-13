@@ -10,6 +10,11 @@ docker build -t docker-nginx .
 docker buildx build --platform linux/amd64,linux/arm64 -t docker-nginx .
 ```
 
+The development host has no usable default Docker bridge network. Prefer
+`--network host` for ad-hoc containers that need networking, and `--network none`
+for offline checks. The integration suite's explicit, user-defined network is
+separate; preserve it for container-to-container DNS and isolation.
+
 ## Verification
 
 ```bash
@@ -83,6 +88,9 @@ it does not promote exact tested digests.
 The job uses `node:24-alpine` and installs Bash, Docker CLI/Buildx, Git, OpenSSL,
 and Python 3 with `sh` before checkout. Fixture bind-mount paths must be visible
 to the Docker daemon.
+Before creating Buildx, the job snapshots the runner's Docker endpoint and TLS
+settings into a per-run Docker context and passes that context to the builder.
+Cleanup removes only successfully created builders and contexts.
 After publishing, retention keeps the newest 10 matching `sha-[a-f0-9]{12}`
 tags, preserving `latest`, nonmatching tags/digests, and other packages.
 Actual disk reclamation requires Forgejo server cleanup/GC, including dangling

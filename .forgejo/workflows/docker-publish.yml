@@ -48,12 +48,18 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Create Docker context
+        id: docker_context
+        run: docker context create "${BUILDX_BUILDER}"
+
       - name: Create Buildx builder
+        id: builder
         run: |
           docker buildx create \
             --name "${BUILDX_BUILDER}" \
             --driver docker-container \
-            --use
+            --use \
+            "${BUILDX_BUILDER}"
 
       - name: Build and test amd64
         run: |
@@ -127,5 +133,9 @@ jobs:
         run: docker logout git.tacomafia.net
 
       - name: Remove Buildx builder
-        if: always()
+        if: always() && steps.builder.outcome == 'success'
         run: docker buildx rm "${BUILDX_BUILDER}"
+
+      - name: Remove Docker context
+        if: always() && steps.docker_context.outcome == 'success'
+        run: docker context rm "${BUILDX_BUILDER}"

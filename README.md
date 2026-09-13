@@ -81,6 +81,11 @@ Build as CI does:
 docker buildx build --platform linux/amd64,linux/arm64 -t docker-nginx .
 ```
 
+The development host does not provide a usable default Docker bridge network.
+Use `--network host` for ad-hoc containers that need network access, or
+`--network none` for offline checks. The integration suite uses its own explicit
+network and should retain that configuration.
+
 Run the smoke and integration suites:
 
 ```bash
@@ -115,6 +120,9 @@ and Buildx, Git, OpenSSL, and Python 3. The runner must provide Docker daemon
 access and support for building and running both architectures (including
 preconfigured QEMU/binfmt emulation for non-native containers). Test fixture
 bind-mount paths must be accessible to that daemon.
+The job creates a per-run Docker context from the runner's connection settings,
+including TLS certificates, and passes it explicitly to Buildx. The builder and
+context are removed afterward only if their creation succeeded.
 Set the repository's `REGISTRY_TOKEN` Actions secret to
 a token with `write:package` scope and write permissions for the package owner.
 
