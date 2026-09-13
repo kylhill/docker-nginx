@@ -22,13 +22,26 @@ scripts/verify-image.sh
 scripts/verify-integration.sh
 ```
 
-Run offline retention unit tests with `python3 -m unittest discover -s tests`.
+Run offline retention and log-policy tests with `python3 -m unittest discover -s tests`.
 `scripts/verify-image.sh` is the core smoke test after
 Dockerfile or container-runtime changes. `scripts/verify-integration.sh` covers
 the required external configuration contract, CrowdSec, TLS, HTTP/2, direct
 nginx PID 1 operation, graceful shutdown, read-only mode, and arbitrary UIDs.
 Its `contract`, `enabled`, and `nonroot` cases can be selected with
 `TEST_CASES`; all run by default.
+
+Log checks default to `ALLOW_EMULATED_AIO_ENOSYS=0` (strict). Only Forgejo's
+single build job sets `ALLOW_EMULATED_AIO_ENOSYS=1`. The exception requires an
+actual image/daemon amd64/arm64 mismatch from `docker image inspect` and
+`docker info`, never job `uname`; normalize daemon x86_64 to amd64 and
+aarch64 to arm64. Native and unknown architectures remain strict; failed queries
+abort, and invalid opt-in values fail before resource creation.
+Only the full line `YYYY/MM/DD HH:MM:SS [emerg] PID#TID: io_setup() failed (38: Function not implemented)`
+with numeric timestamp/PID/TID is excluded from captured container logs and
+auxiliary Lua startup output. Retain original diagnostics and command failures.
+This knowingly reduces emulated AIO coverage for QEMU ENOSYS during epoll
+initialization; do not change nginx's event method or other checks.
+Native GitHub verification retains strict log checks.
 
 Test fixtures use separate per-run named volumes populated with `docker cp`
 through stopped staging containers from `IMAGE`, without starting nginx.

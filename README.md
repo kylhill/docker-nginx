@@ -101,6 +101,23 @@ enforcement, TLS/HTTP/2, and read-only arbitrary-UID mode.
 Select cases with `TEST_CASES=contract`, `TEST_CASES=enabled`, or
 `TEST_CASES=nonroot`.
 
+Log checks default to strict (`ALLOW_EMULATED_AIO_ENOSYS=0`). Forgejo's single
+build job opts in with `ALLOW_EMULATED_AIO_ENOSYS=1`: only a known amd64/arm64
+mismatch between `docker image inspect` and `docker info` permits removing this
+exact, full timestamped line from captured logs and the Lua startup check:
+
+```text
+YYYY/MM/DD HH:MM:SS [emerg] PID#TID: io_setup() failed (38: Function not implemented)
+```
+
+Timestamp fields and PID/TID must be numeric. All other diagnostics and checks
+remain unchanged; original output is retained. Daemon `x86_64`/`aarch64` names
+normalize to `amd64`/`arm64`; native or unknown architectures remain strict,
+and architecture-query failures abort verification. Invalid opt-in values fail
+before builds or fixture creation. This accommodates QEMU's known ENOSYS during
+epoll initialization, with reduced emulated AIO coverage, not a change to nginx
+or its event method. Native GitHub jobs retain strict log checks.
+
 Fixtures are copied through the Docker API (`docker cp`) into separate,
 per-run named volumes using stopped staging containers from the test image.
 Workloads mount those volumes read-only. Local and remote Docker daemons use
@@ -133,7 +150,8 @@ context are removed afterward only if their creation succeeded.
 Set the repository's `REGISTRY_TOKEN` Actions secret to
 a token with `write:package` scope and write permissions for the package owner.
 
-Run the offline retention tests with `python3 -m unittest discover -s tests`.
+Run the offline retention and log-policy tests with
+`python3 -m unittest discover -s tests`.
 
 This deliberately simpler workflow rebuilds for publishing after both
 architectures pass smoke tests and amd64 passes integration tests. It does not

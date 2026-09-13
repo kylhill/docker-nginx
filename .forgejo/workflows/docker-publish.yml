@@ -29,6 +29,7 @@ jobs:
       run:
         shell: bash
     env:
+      ALLOW_EMULATED_AIO_ENOSYS: "1"
       BUILDX_BUILDER: ci-${{ forgejo.run_id }}
       BUILDX_CONTEXT: ci-context-${{ forgejo.run_id }}
 
