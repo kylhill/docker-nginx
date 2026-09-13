@@ -30,7 +30,8 @@
       ],
       "datasourceTemplate": "github-release-attachments",
       "depNameTemplate": "crowdsecurity/cs-nginx-bouncer",
-      "extractVersionTemplate": "^v(?<version>.*)$",
+      "currentValueTemplate": "v{{{currentValue}}}",
+      "autoReplaceStringTemplate": "# renovate: datasource=github-release-attachments depName=crowdsecurity/cs-nginx-bouncer\nARG CROWDSEC_BOUNCER_VERSION={{replace '^v' '' newValue}}\nARG CROWDSEC_BOUNCER_SHA256={{#if newDigest}}{{{newDigest}}}{{else}}{{{currentDigest}}}{{/if}}",
       "versioningTemplate": "semver"
     }
   ],

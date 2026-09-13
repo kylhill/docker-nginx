@@ -137,6 +137,9 @@ outside Renovate's scope.
 
 `lua-resty-string` is extracted without its OpenResty dependency, so its Alpine
 package is pinned and updated with the other direct APK dependencies. The
-CrowdSec release version and archive checksum are updated together. GitHub
+CrowdSec release version and archive checksum are updated together. Its custom
+manager adds the upstream `v` prefix for release/digest lookups and removes it
+when writing the Dockerfile version; digest lookups require the exact release
+tag, not an extracted numeric version. GitHub
 publishing combines only platform digests that passed their native smoke tests;
 amd64 also runs the integration suite.
