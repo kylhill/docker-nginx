@@ -6,6 +6,8 @@ on:
     - cron: "32 9 * * 1"
   workflow_dispatch:
 
+enable-email-notifications: true
+   
 jobs:
   renovate:
     runs-on: oci-deps
