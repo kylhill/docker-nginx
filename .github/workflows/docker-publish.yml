@@ -15,8 +15,6 @@ on:
       - .github/workflows/docker-publish.yml
   workflow_dispatch:
 
-enable-email-notifications: true
-   
 concurrency:
   group: docker-nginx-registry
   cancel-in-progress: false
