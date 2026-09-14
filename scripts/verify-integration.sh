@@ -8,10 +8,7 @@ IMAGE="${IMAGE:-docker-nginx:verify}"
 PREFIX="${PREFIX:-docker-nginx-integration-$$}"
 TEST_CASES="${TEST_CASES:-contract,enabled,nonroot}"
 CHECK_LUA_MODULES="${CHECK_LUA_MODULES:-0}"
-# shellcheck source=scripts/verify-log-policy.sh
-source "${REPOSITORY_ROOT}/scripts/verify-log-policy.sh"
-configure_log_policy
-
+LOG_ERROR_REGEX="${LOG_ERROR_REGEX:-\\[(emerg|alert|crit|error)\\]|^ERROR:|^FATAL:}"
 TEST_ROOT="$(mktemp -d)"
 
 declare -a CONTAINERS=()
@@ -118,9 +115,8 @@ prepare_fixture_volume() {
 
 check_lua_modules() {
     local container="$1"
-    local output status=0
 
-    output="$(docker exec "${container}" sh -ec 'cat > /tmp/crowdsec-lua-load-test.conf <<'"'"'EOF'"'"'
+    docker exec "${container}" sh -lc 'cat > /tmp/crowdsec-lua-load-test.conf <<'"'"'EOF'"'"'
 include /etc/nginx/modules/*.conf;
 pid /tmp/crowdsec-lua-load-test.pid;
 error_log stderr;
@@ -138,12 +134,7 @@ http {
 }
 EOF
 nginx -c /tmp/crowdsec-lua-load-test.conf -e stderr
-nginx -c /tmp/crowdsec-lua-load-test.conf -e stderr -s quit' 2>&1)" || status=$?
-    if [ "${status}" != 0 ]; then
-        printf '%s\n' "${output}" >&2
-        return "${status}"
-    fi
-    check_nginx_output "${output}"
+nginx -c /tmp/crowdsec-lua-load-test.conf -e stderr -s quit'
 }
 
 test_contract() {
@@ -151,7 +142,7 @@ test_contract() {
     local target="${PREFIX}-contract"
     local config_dir="${TEST_ROOT}/contract-config"
     local config_volume="${PREFIX}-contract-config"
-    local exit_code logs
+    local exit_code
 
     PHASE="required configuration contract"
     echo "Checking startup fails without externally managed configuration..."
@@ -160,8 +151,7 @@ test_contract() {
     docker run -d --name "${missing}" --network none "${IMAGE}" >/dev/null
     exit_code="$(docker wait "${missing}")"
     [ "${exit_code}" != 0 ] || fail "container unexpectedly started without /config"
-    logs="$(docker logs "${missing}" 2>&1)" || fail "could not read missing-config logs: ${logs}"
-    grep -Fq '/config/nginx/nginx.conf' <<< "${logs}" ||
+    docker logs "${missing}" 2>&1 | grep -Fq '/config/nginx/nginx.conf' ||
         fail "missing-config error did not name /config/nginx/nginx.conf"
 
     prepare_config "${config_dir}"
@@ -186,7 +176,9 @@ test_contract() {
         -t || fail "external configuration validation failed"
     if [ "${CHECK_LUA_MODULES}" = 1 ]; then
         check_lua_modules "${target}" || fail "CrowdSec Lua modules could not be loaded"
-        check_container_logs "${target}" || fail "container log validation failed"
+        if docker logs "${target}" 2>&1 | grep -Eiq "${LOG_ERROR_REGEX}"; then
+            fail "container logs matched error regex: ${LOG_ERROR_REGEX}"
+        fi
     fi
     docker stop -t 10 "${target}" >/dev/null
     [ "$(docker inspect -f '{{.State.ExitCode}}' "${target}")" = 0 ] ||

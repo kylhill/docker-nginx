@@ -3,11 +3,14 @@ set -Eeuo pipefail
 
 REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DOCKERFILE="${REPOSITORY_ROOT}/Dockerfile"
-WORKFLOW_DIR="${REPOSITORY_ROOT}/.github/workflows"
+WORKFLOW_DIRS=(
+    "${REPOSITORY_ROOT}/.github/workflows"
+    "${REPOSITORY_ROOT}/.forgejo/workflows"
+)
 KNOWN_IMAGES='^(moby/buildkit|koalaman/shellcheck|ghcr.io/hadolint/hadolint|rhysd/actionlint):'
 
 mapfile -d '' workflow_files < <(
-    find "${WORKFLOW_DIR}" -type f \
+    find "${WORKFLOW_DIRS[@]}" -type f \
         \( -name '*.yml' -o -name '*.yaml' \) -print0 | sort -z
 )
 ((${#workflow_files[@]} > 0)) || {
@@ -23,13 +26,13 @@ while IFS= read -r ref; do
 done < <(grep -hEo '[[:alnum:]./_-]+:[^[:space:]]+@sha256:[a-f0-9]{64}' \
     "${workflow_files[@]}" | sort -u)
 
-while IFS= read -r ref; do
-    [[ "${ref}" =~ @[a-f0-9]{40}$ ]] || {
-        echo "External GitHub Action is not pinned to a commit SHA: ${ref}" >&2
+while IFS= read -r action_line; do
+    [[ "${action_line}" =~ uses:[[:space:]]+[^[:space:]]+@[a-f0-9]{40}[[:space:]]+#[[:space:]]+v[1-9][0-9]*(\.[0-9]+){0,2}$ ]] || {
+        echo "External action is not pinned to a commit SHA with a version comment: ${action_line}" >&2
         exit 1
     }
-done < <(grep -hEo 'uses:[[:space:]]+[^./][^[:space:]]+' \
-    "${workflow_files[@]}" | sed -E 's/^uses:[[:space:]]+//' | sort -u)
+done < <(grep -hE '^[[:space:]]*uses:[[:space:]]+[^./][^[:space:]]+' \
+    "${workflow_files[@]}" | sed -E 's/^[[:space:]]+//' | sort -u)
 
 dockerfile_args="$(sed -nE 's/^ARG ([A-Z0-9_]+)=.*/\1/p' "${DOCKERFILE}" | sort)"
 expected_dockerfile_args="$(printf '%s\n' \

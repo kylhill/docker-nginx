@@ -22,26 +22,13 @@ scripts/verify-image.sh
 scripts/verify-integration.sh
 ```
 
-Run offline retention and log-policy tests with `python3 -m unittest discover -s tests`.
+Run offline retention tests with `python3 -m unittest discover -s tests`.
 `scripts/verify-image.sh` is the core smoke test after
 Dockerfile or container-runtime changes. `scripts/verify-integration.sh` covers
 the required external configuration contract, CrowdSec, TLS, HTTP/2, direct
 nginx PID 1 operation, graceful shutdown, read-only mode, and arbitrary UIDs.
 Its `contract`, `enabled`, and `nonroot` cases can be selected with
 `TEST_CASES`; all run by default.
-
-Log checks default to `ALLOW_EMULATED_AIO_ENOSYS=0` (strict). Only Forgejo's
-single build job sets `ALLOW_EMULATED_AIO_ENOSYS=1`. The exception requires an
-actual image/daemon amd64/arm64 mismatch from `docker image inspect` and
-`docker info`, never job `uname`; normalize daemon x86_64 to amd64 and
-aarch64 to arm64. Native and unknown architectures remain strict; failed queries
-abort, and invalid opt-in values fail before resource creation.
-Only the full line `YYYY/MM/DD HH:MM:SS [emerg] PID#TID: io_setup() failed (38: Function not implemented)`
-with numeric timestamp/PID/TID is excluded from captured container logs and
-auxiliary Lua startup output. Retain original diagnostics and command failures.
-This knowingly reduces emulated AIO coverage for QEMU ENOSYS during epoll
-initialization; do not change nginx's event method or other checks.
-Native GitHub verification retains strict log checks.
 
 Test fixtures use separate per-run named volumes populated with `docker cp`
 through stopped staging containers from `IMAGE`, without starting nginx.
@@ -92,20 +79,19 @@ installing its OpenResty dependency.
 
 The expected workflow is local verification followed by a direct push to
 `main` on the authoritative Forgejo repository; GitHub is the CI and reporting
-mirror. Mirrored pushes run ShellCheck, Hadolint, Actionlint, dependency-pin
-checks, amd64 integration tests, and smoke tests on native amd64 and arm64
-runners. Each runner tests the exact image digest it pushes; publishing combines
-only verified digests.
+mirror. Mirrored pushes run one GitHub job that builds both architectures,
+smoke-tests amd64 natively, runs the integration suite on amd64, rebuilds and
+publishes the multi-platform image to GHCR with `latest` and short-SHA tags,
+then retains the newest 10 matching SHA releases.
 
 Forgejo also runs a deliberately simpler single-job publishing workflow on the
-`oci-build` runner. It smoke-tests amd64 and arm64 images and runs the full
-integration suite on amd64, then rebuilds and pushes amd64/arm64 images to
-`git.tacomafia.net` with `latest` and short-SHA tags. It requires the
+`oci-build` runner. It builds both architectures, smoke-tests arm64 natively,
+runs the full integration suite on arm64, then rebuilds and pushes amd64/arm64
+images to the registry with `latest` and short-SHA tags. It requires the
 `REGISTRY_TOKEN` secret with `write:package` scope and package-owner write
-permissions, Docker daemon access, and support for building and running both architectures
-(preconfigured emulation for non-native containers); unlike GitHub publishing,
-it does not promote exact tested digests.
-The job uses `node:24-alpine` and installs Bash, Docker CLI/Buildx, Git, OpenSSL,
+permissions, Docker daemon access, and support for building both architectures
+(preconfigured emulation for non-native builds).
+The job uses the current Node.js LTS Alpine line and installs Bash, Docker CLI/Buildx, Git, OpenSSL,
 and Python 3 with `sh` before checkout. API-based fixture copying supports
 remote Docker daemons without shared filesystem paths.
 Before creating Buildx, the job snapshots the runner's Docker endpoint and TLS
@@ -117,7 +103,9 @@ tags, preserving `latest`, nonmatching tags/digests, and other packages.
 Actual disk reclamation requires Forgejo server cleanup/GC, including dangling
 container digests.
 
-The weekly Forgejo Renovate workflow updates only Dockerfile dependencies. It
-tracks the Dockerfile frontend, official Alpine base, direct Alpine packages,
-and the CrowdSec bouncer version and archive checksum. GitHub Actions and CI
-helper image pins remain manually managed.
+The weekly Forgejo Renovate workflow tracks the Dockerfile frontend, official
+Alpine base, direct Alpine packages, the CrowdSec bouncer version and archive
+checksum, and action references in GitHub and Forgejo workflows. CI helper
+image digests are pinned and updated automatically. Pin actions to full commit
+SHAs with version comments so Renovate can update them. Update the Forgejo
+job's Node major only after the Node.js release feed marks that major as LTS.

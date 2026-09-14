@@ -8,9 +8,6 @@ BUILD_CONTEXT="${BUILD_CONTEXT:-${REPOSITORY_ROOT}}"
 PLATFORM="${PLATFORM:-}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
 
-# shellcheck source=scripts/verify-log-policy.sh
-source "${REPOSITORY_ROOT}/scripts/verify-log-policy.sh"
-
 if [ "${SKIP_BUILD}" != "1" ]; then
     echo "Building ${IMAGE} from ${DOCKERFILE}..."
     if [ -n "${PLATFORM}" ]; then

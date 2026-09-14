@@ -101,23 +101,6 @@ enforcement, TLS/HTTP/2, and read-only arbitrary-UID mode.
 Select cases with `TEST_CASES=contract`, `TEST_CASES=enabled`, or
 `TEST_CASES=nonroot`.
 
-Log checks default to strict (`ALLOW_EMULATED_AIO_ENOSYS=0`). Forgejo's single
-build job opts in with `ALLOW_EMULATED_AIO_ENOSYS=1`: only a known amd64/arm64
-mismatch between `docker image inspect` and `docker info` permits removing this
-exact, full timestamped line from captured logs and the Lua startup check:
-
-```text
-YYYY/MM/DD HH:MM:SS [emerg] PID#TID: io_setup() failed (38: Function not implemented)
-```
-
-Timestamp fields and PID/TID must be numeric. All other diagnostics and checks
-remain unchanged; original output is retained. Daemon `x86_64`/`aarch64` names
-normalize to `amd64`/`arm64`; native or unknown architectures remain strict,
-and architecture-query failures abort verification. Invalid opt-in values fail
-before builds or fixture creation. This accommodates QEMU's known ENOSYS during
-epoll initialization, with reduced emulated AIO coverage, not a change to nginx
-or its event method. Native GitHub jobs retain strict log checks.
-
 Fixtures are copied through the Docker API (`docker cp`) into separate,
 per-run named volumes using stopped staging containers from the test image.
 Workloads mount those volumes read-only. Local and remote Docker daemons use
@@ -129,7 +112,8 @@ including when verification fails.
 
 The Forgejo `docker-publish.yml` workflow runs on relevant pushes to `main` or
 manual dispatch. A single `oci-build` job builds and smoke-tests amd64 and arm64
-images, runs the full integration suite on amd64, then builds and pushes
+images, but only runs the arm64 image. It smoke-tests arm64 natively, runs the
+full integration suite on arm64, then builds and pushes
 `linux/amd64,linux/arm64` images to
 `git.tacomafia.net/<owner>/<repository>` with `latest` and `sha-<12-character SHA>`
 tags. After successful publishing, retention keeps the newest 10 matching
@@ -138,26 +122,25 @@ all nonmatching tags/digests, and other packages. Cleanup errors fail the job.
 Actual disk reclamation depends on Forgejo server cleanup/garbage collection,
 including removal of dangling container digests.
 
-The job explicitly uses `node:24-alpine`, providing Node.js for
-`actions/checkout@v6`. Before checkout, a `sh` step installs Bash, Docker CLI
+The job explicitly uses the current Node.js LTS Alpine line, providing Node.js
+for `actions/checkout`. Before checkout, a `sh` step installs Bash, Docker CLI
 and Buildx, Git, OpenSSL, and Python 3. The runner must provide Docker daemon
-access and support for building and running both architectures (including
-preconfigured QEMU/binfmt emulation for non-native containers). Test fixtures
-are transferred through the Docker API, not host bind mounts.
+access and support for building both architectures (including preconfigured
+QEMU/binfmt emulation for non-native builds). Test fixtures are transferred
+through the Docker API, not host bind mounts.
 The job creates a per-run Docker context from the runner's connection settings,
 including TLS certificates, and passes it explicitly to Buildx. The builder and
 context are removed afterward only if their creation succeeded.
 Set the repository's `REGISTRY_TOKEN` Actions secret to
 a token with `write:package` scope and write permissions for the package owner.
 
-Run the offline retention and log-policy tests with
+Run the offline retention tests with
 `python3 -m unittest discover -s tests`.
 
-This deliberately simpler workflow rebuilds for publishing after both
-architectures pass smoke tests and amd64 passes integration tests. It does not
-promote exact tested digests.
-The existing GitHub workflow remains unchanged and provides the stricter native
-multi-platform verification and GHCR publishing path.
+This deliberately simpler workflow rebuilds for publishing after arm64 passes
+its native smoke and integration tests. GitHub provides the complementary
+native amd64 smoke and integration coverage while only building arm64. After
+publishing, each registry retains its newest 10 short-SHA releases.
 
 ## Dependency updates
 
@@ -165,14 +148,14 @@ The Dockerfile frontend, official Alpine base, direct Alpine packages, and
 CrowdSec bouncer archive are pinned. Renovate runs weekly on the authoritative
 Forgejo repository and opens pull requests for Dockerfile dependency updates.
 The Alpine base and package pins are grouped so a stable-branch transition is
-applied atomically. GitHub Actions and CI helper images are intentionally
-outside Renovate's scope.
+applied atomically. Actions in GitHub and Forgejo workflows are pinned to commit
+SHAs with version comments, allowing Renovate to update them safely. Renovate
+also updates pinned CI helper image digests. The Forgejo job's Node major is
+updated only when the Node.js release feed marks a newer major as LTS.
 
 `lua-resty-string` is extracted without its OpenResty dependency, so its Alpine
 package is pinned and updated with the other direct APK dependencies. The
 CrowdSec release version and archive checksum are updated together. Its custom
 manager adds the upstream `v` prefix for release/digest lookups and removes it
 when writing the Dockerfile version; digest lookups require the exact release
-tag, not an extracted numeric version. GitHub
-publishing combines only platform digests that passed their native smoke tests;
-amd64 also runs the integration suite.
+tag, not an extracted numeric version.

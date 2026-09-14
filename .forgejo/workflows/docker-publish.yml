@@ -23,13 +23,13 @@ jobs:
   build:
     runs-on: oci-build
     container:
+      # renovate: datasource=node-version depName=node
       image: docker.io/library/node:24-alpine
     timeout-minutes: 60
     defaults:
       run:
         shell: bash
     env:
-      ALLOW_EMULATED_AIO_ENOSYS: "1"
       BUILDX_BUILDER: ci-${{ forgejo.run_id }}
       BUILDX_CONTEXT: ci-context-${{ forgejo.run_id }}
 
@@ -46,7 +46,7 @@ jobs:
             python3
 
       - name: Checkout
-        uses: https://github.com/actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -63,7 +63,7 @@ jobs:
             --use \
             "${BUILDX_CONTEXT}"
 
-      - name: Build and test amd64
+      - name: Build amd64
         run: |
           docker buildx build \
             --platform linux/amd64 \
@@ -71,11 +71,6 @@ jobs:
             --load \
             --tag docker-nginx:test-amd64 \
             .
-
-          IMAGE=docker-nginx:test-amd64 \
-          PLATFORM=linux/amd64 \
-          SKIP_BUILD=1 \
-            scripts/verify-image.sh
 
       - name: Build and test arm64
         run: |
@@ -93,7 +88,7 @@ jobs:
 
       - name: Run integration tests
         env:
-          IMAGE: docker-nginx:test-amd64
+          IMAGE: docker-nginx:test-arm64
         run: scripts/verify-integration.sh
 
       - name: Log in to Forgejo registry

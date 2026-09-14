@@ -5,6 +5,7 @@
   ],
   "enabledManagers": [
     "dockerfile",
+    "github-actions",
     "custom.regex"
   ],
   "customManagers": [
@@ -33,6 +34,20 @@
       "currentValueTemplate": "v{{{currentValue}}}",
       "autoReplaceStringTemplate": "# renovate: datasource=github-release-attachments depName=crowdsecurity/cs-nginx-bouncer\nARG CROWDSEC_BOUNCER_VERSION={{replace '^v' '' newValue}}\nARG CROWDSEC_BOUNCER_SHA256={{#if newDigest}}{{{newDigest}}}{{else}}{{{currentDigest}}}{{/if}}",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Update the Forgejo job to the newest Node.js LTS major",
+      "managerFilePatterns": [
+        "/^\\.forgejo/workflows/docker-publish\\.yml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=node-version depName=node\\n\\s+image: docker\\.io/library/node:(?<currentValue>\\d+)-alpine"
+      ],
+      "datasourceTemplate": "node-version",
+      "depNameTemplate": "node",
+      "extractVersionTemplate": "^v?(?<version>\\d+)",
+      "versioningTemplate": "node"
     }
   ],
   "packageRules": [
@@ -50,6 +65,30 @@
         "/(^|\\/)alpine$/"
       ],
       "groupName": "Alpine base and packages"
+    },
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepTypes": [
+        "container"
+      ],
+      "pinDigests": true
+    },
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "/(^|\\/)node$/"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
     }
   ],
   "automerge": false,
