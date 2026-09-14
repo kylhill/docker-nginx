@@ -111,9 +111,10 @@ including when verification fails.
 ## Forgejo publishing
 
 The Forgejo `docker-publish.yml` workflow runs on relevant pushes to `main` or
-manual dispatch. A single `oci-build` job builds and smoke-tests amd64 and arm64
-images, but only runs the arm64 image. It smoke-tests arm64 natively, runs the
-full integration suite on arm64, then builds and pushes
+manual dispatch. A single `oci-build` job requires a native arm64 Docker daemon
+and builds both architectures, but never loads or runs the amd64 image. It
+smoke-tests arm64 natively, runs the full integration suite on arm64, then
+builds and pushes
 `linux/amd64,linux/arm64` images to
 `git.tacomafia.net/<owner>/<repository>` with `latest` and `sha-<12-character SHA>`
 tags. After successful publishing, retention keeps the newest 10 matching

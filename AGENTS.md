@@ -85,7 +85,8 @@ publishes the multi-platform image to GHCR with `latest` and short-SHA tags,
 then retains the newest 10 matching SHA releases.
 
 Forgejo also runs a deliberately simpler single-job publishing workflow on the
-`oci-build` runner. It builds both architectures, smoke-tests arm64 natively,
+`oci-build` runner. It requires a native arm64 Docker daemon, builds amd64 to a
+cache-only output without loading or running it, smoke-tests arm64 natively,
 runs the full integration suite on arm64, then rebuilds and pushes amd64/arm64
 images to the registry with `latest` and short-SHA tags. It requires the
 `REGISTRY_TOKEN` secret with `write:package` scope and package-owner write
