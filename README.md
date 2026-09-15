@@ -135,9 +135,6 @@ context are removed afterward only if their creation succeeded.
 Set the repository's `REGISTRY_TOKEN` Actions secret to
 a token with `write:package` scope and write permissions for the package owner.
 
-Run the offline retention tests with
-`python3 -m unittest discover -s tests`.
-
 This deliberately simpler workflow rebuilds for publishing after arm64 passes
 its native smoke and integration tests. GitHub provides the complementary
 native amd64 smoke and integration coverage while only building arm64. After
