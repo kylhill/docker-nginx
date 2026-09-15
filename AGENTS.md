@@ -22,7 +22,6 @@ scripts/verify-image.sh
 scripts/verify-integration.sh
 ```
 
-Run offline retention tests with `python3 -m unittest discover -s tests`.
 `scripts/verify-image.sh` is the core smoke test after
 Dockerfile or container-runtime changes. `scripts/verify-integration.sh` covers
 the required external configuration contract, CrowdSec, TLS, HTTP/2, direct
