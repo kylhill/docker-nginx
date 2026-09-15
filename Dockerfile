@@ -35,7 +35,7 @@ ARG NGINX_MOD_HTTP_LUA_VERSION=1.30.4-r1
 # renovate: datasource=apk depName=nginx-mod-http-zstd
 ARG NGINX_MOD_HTTP_ZSTD_VERSION=1.30.4-r1
 # renovate: datasource=apk depName=tzdata
-ARG TZDATA_VERSION=2026c-r0
+ARG TZDATA_VERSION=2026d-r0
 RUN set -eux; \
   # lua-resty-string declares an OpenResty-specific package dependency even
   # though nginx-mod-http-lua provides the same Lua runtime. Extract the
