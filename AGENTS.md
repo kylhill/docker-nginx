@@ -79,15 +79,15 @@ installing its OpenResty dependency.
 The expected workflow is local verification followed by a direct push to
 `main` on the authoritative Forgejo repository; GitHub is the CI and reporting
 mirror. Mirrored pushes run one GitHub job that builds both architectures,
-smoke-tests amd64 natively, runs the integration suite on amd64, rebuilds and
-publishes the multi-platform image to GHCR with `latest` and short-SHA tags,
+smoke-tests amd64 natively, runs the integration suite on amd64, and publishes
+the already-built platform digests to GHCR with `latest` and short-SHA tags,
 then retains the newest 10 matching SHA releases.
 
-Forgejo also runs a deliberately simpler single-job publishing workflow on the
-`oci-build` runner. It requires a native arm64 Docker daemon, builds amd64 to a
-cache-only output without loading or running it, smoke-tests arm64 natively,
-runs the full integration suite on arm64, then rebuilds and pushes amd64/arm64
-images to the registry with `latest` and short-SHA tags. It requires the
+Forgejo also runs a single-job publishing workflow on the
+`oci-build` runner. It requires a native arm64 Docker daemon, builds amd64
+without running it, tests arm64 natively, then publishes the already-built
+platform digests to the registry with `latest` and short-SHA tags. It requires
+the
 `REGISTRY_TOKEN` secret with `write:package` scope and package-owner write
 permissions, Docker daemon access, and support for building both architectures
 (preconfigured emulation for non-native builds).
@@ -97,7 +97,8 @@ remote Docker daemons without shared filesystem paths.
 Before creating Buildx, the job snapshots the runner's Docker endpoint and TLS
 settings into a per-run Docker context and passes that context to the builder.
 Keep context and builder names distinct: Buildx also exposes contexts as builders.
-Cleanup removes only successfully created builders and contexts.
+Cleanup removes only successfully created builders and contexts. Publishing
+and pull-request builds use separate persistent local cache scopes.
 After publishing, retention keeps the newest 10 matching `sha-[a-f0-9]{12}`
 tags, preserving `latest`, nonmatching tags/digests, and other packages.
 Actual disk reclamation requires Forgejo server cleanup/GC, including dangling

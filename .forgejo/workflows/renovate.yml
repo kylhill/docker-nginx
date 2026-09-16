@@ -14,7 +14,7 @@ jobs:
     container:
       image: docker.io/renovate/renovate:latest@sha256:e66b19362fdea02ca95d3947b0f4feb846453885d145b136cb8803b6d9224763
       volumes:
-        - /opt/renovate-cache:/tmp/renovate/containerbase
+        - /opt/cache:/tmp/renovate/containerbase
     env:
       LOG_LEVEL: info
       RENOVATE_CONTAINERBASE_DIR: /tmp/renovate/containerbase

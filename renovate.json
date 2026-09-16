@@ -39,7 +39,7 @@
       "customType": "regex",
       "description": "Update the Forgejo job to the newest Node.js LTS major",
       "managerFilePatterns": [
-        "/^\\.forgejo/workflows/docker-publish\\.yml$/"
+        "/^\\.forgejo/workflows/(docker-publish|pull-request)\\.yml$/"
       ],
       "matchStrings": [
         "# renovate: datasource=node-version depName=node\\n\\s+image: docker\\.io/library/node:(?<currentValue>\\d+)-alpine"

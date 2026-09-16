@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
 
 enable-email-notifications: true
-   
+
 concurrency:
   group: docker-nginx-registry
   cancel-in-progress: false
@@ -27,6 +27,8 @@ jobs:
     container:
       # renovate: datasource=node-version depName=node
       image: docker.io/library/node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81
+      volumes:
+        - /opt/cache:/var/cache/docker-nginx-build
     timeout-minutes: 60
     defaults:
       run:
@@ -34,6 +36,7 @@ jobs:
     env:
       BUILDX_BUILDER: ci-${{ forgejo.run_id }}
       BUILDX_CONTEXT: ci-context-${{ forgejo.run_id }}
+      CACHE_SCOPE: publish
 
     steps:
       - name: Install job tools
@@ -65,6 +68,21 @@ jobs:
             --use \
             "${BUILDX_CONTEXT}"
 
+      - name: Log in to Forgejo registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+          REGISTRY_USERNAME: ${{ forgejo.repository_owner }}
+        run: |
+          printf '%s' "${REGISTRY_TOKEN}" |
+            docker login git.tacomafia.net \
+              --username "${REGISTRY_USERNAME}" \
+              --password-stdin
+
+      - name: Set image metadata
+        run: |
+          echo "IMAGE=${FORGEJO_SERVER_URL#*://}/${FORGEJO_REPOSITORY,,}" >> "${FORGEJO_ENV}"
+          echo "SHORT_SHA=${FORGEJO_SHA:0:12}" >> "${FORGEJO_ENV}"
+
       - name: Build amd64
         run: |
           daemon_arch="$(docker info --format '{{.Architecture}}')"
@@ -76,20 +94,45 @@ jobs:
               ;;
           esac
 
+          cache_from=()
+          cache_dir="/var/cache/docker-nginx-build/${CACHE_SCOPE}-amd64"
+          if [[ -f "${cache_dir}/index.json" ]]; then
+            cache_from=(--cache-from "type=local,src=${cache_dir}")
+          fi
+
           docker buildx build \
             --platform linux/amd64 \
             --pull \
-            --output type=cacheonly \
+            "${cache_from[@]}" \
+            --cache-to "type=local,dest=${cache_dir},mode=max" \
+            --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
+            --metadata-file /tmp/amd64-metadata.json \
             .
+
+          digest="$(python3 -c 'import json; print(json.load(open("/tmp/amd64-metadata.json"))["containerimage.digest"])')"
+          echo "AMD64_DIGEST=${digest}" >> "${FORGEJO_ENV}"
 
       - name: Build and test arm64
         run: |
+          cache_from=()
+          cache_dir="/var/cache/docker-nginx-build/${CACHE_SCOPE}-arm64"
+          if [[ -f "${cache_dir}/index.json" ]]; then
+            cache_from=(--cache-from "type=local,src=${cache_dir}")
+          fi
+
           docker buildx build \
             --platform linux/arm64 \
             --pull \
-            --load \
-            --tag docker-nginx:test-arm64 \
+            "${cache_from[@]}" \
+            --cache-to "type=local,dest=${cache_dir},mode=max" \
+            --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
+            --metadata-file /tmp/arm64-metadata.json \
             .
+
+          digest="$(python3 -c 'import json; print(json.load(open("/tmp/arm64-metadata.json"))["containerimage.digest"])')"
+          echo "ARM64_DIGEST=${digest}" >> "${FORGEJO_ENV}"
+          docker pull "${IMAGE}@${digest}"
+          docker tag "${IMAGE}@${digest}" docker-nginx:test-arm64
 
           IMAGE=docker-nginx:test-arm64 \
           PLATFORM=linux/arm64 \
@@ -101,32 +144,13 @@ jobs:
           IMAGE: docker-nginx:test-arm64
         run: scripts/verify-integration.sh
 
-      - name: Log in to Forgejo registry
-        env:
-          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
-          REGISTRY_USERNAME: ${{ forgejo.repository_owner }}
+      - name: Publish multi-platform manifest
         run: |
-          printf '%s' "${REGISTRY_TOKEN}" |
-            docker login git.tacomafia.net \
-              --username "${REGISTRY_USERNAME}" \
-              --password-stdin
-
-      - name: Build and publish
-        env:
-          IMAGE: git.tacomafia.net/${{ forgejo.repository }}
-        run: |
-          set -euo pipefail
-
-          short_sha="${FORGEJO_SHA:0:12}"
-          IMAGE="${IMAGE,,}"
-
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --pull \
-            --tag "${IMAGE}:sha-${short_sha}" \
+          docker buildx imagetools create \
+            --tag "${IMAGE}:sha-${SHORT_SHA}" \
             --tag "${IMAGE}:latest" \
-            --push \
-            .
+            "${IMAGE}@${AMD64_DIGEST}" \
+            "${IMAGE}@${ARM64_DIGEST}"
 
       - name: Retain newest 10 SHA releases
         env:

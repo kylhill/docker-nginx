@@ -40,34 +40,6 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
-      - name: Build and test amd64
-        run: |
-          docker buildx build \
-            --platform linux/amd64 \
-            --pull \
-            --load \
-            --tag docker-nginx:test-amd64 \
-            .
-
-          IMAGE=docker-nginx:test-amd64 \
-          PLATFORM=linux/amd64 \
-          SKIP_BUILD=1 \
-            scripts/verify-image.sh
-
-      - name: Build arm64
-        run: |
-          docker buildx build \
-            --platform linux/arm64 \
-            --pull \
-            --load \
-            --tag docker-nginx:test-arm64 \
-            .
-
-      - name: Run integration tests
-        env:
-          IMAGE: docker-nginx:test-amd64
-        run: scripts/verify-integration.sh
-
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -75,24 +47,60 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ github.token }}
 
-      - name: Build and publish
+      - name: Set image metadata
         env:
-          IMAGE: ghcr.io/${{ github.repository }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          set -euo pipefail
+          echo "IMAGE=ghcr.io/${REPOSITORY,,}" >> "${GITHUB_ENV}"
+          echo "SHORT_SHA=${GITHUB_SHA:0:12}" >> "${GITHUB_ENV}"
 
-          short_sha="${GITHUB_SHA:0:12}"
-          IMAGE="${IMAGE,,}"
-
+      - name: Build amd64
+        run: |
           docker buildx build \
-            --platform linux/amd64,linux/arm64 \
+            --platform linux/amd64 \
+            --pull \
+            --cache-from "type=gha,scope=publish-amd64" \
+            --cache-to "type=gha,scope=publish-amd64,mode=max" \
+            --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
+            --metadata-file /tmp/amd64-metadata.json \
+            .
+
+          digest="$(jq -er '."containerimage.digest"' /tmp/amd64-metadata.json)"
+          echo "AMD64_DIGEST=${digest}" >> "${GITHUB_ENV}"
+          docker pull "${IMAGE}@${digest}"
+          docker tag "${IMAGE}@${digest}" docker-nginx:test-amd64
+
+      - name: Test amd64
+        run: |
+          IMAGE=docker-nginx:test-amd64 \
+          PLATFORM=linux/amd64 \
+          SKIP_BUILD=1 \
+            scripts/verify-image.sh
+          IMAGE=docker-nginx:test-amd64 scripts/verify-integration.sh
+
+      - name: Build arm64
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
             --pull \
             --provenance=false \
             --sbom=false \
-            --tag "${IMAGE}:sha-${short_sha}" \
-            --tag "${IMAGE}:latest" \
-            --push \
+            --cache-from "type=gha,scope=publish-arm64" \
+            --cache-to "type=gha,scope=publish-arm64,mode=max" \
+            --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
+            --metadata-file /tmp/arm64-metadata.json \
             .
+
+          digest="$(jq -er '."containerimage.digest"' /tmp/arm64-metadata.json)"
+          echo "ARM64_DIGEST=${digest}" >> "${GITHUB_ENV}"
+
+      - name: Publish multi-platform manifest
+        run: |
+          docker buildx imagetools create \
+            --tag "${IMAGE}:sha-${SHORT_SHA}" \
+            --tag "${IMAGE}:latest" \
+            "${IMAGE}@${AMD64_DIGEST}" \
+            "${IMAGE}@${ARM64_DIGEST}"
 
       - name: Retain newest 10 SHA releases
         shell: bash

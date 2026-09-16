@@ -25,6 +25,8 @@ jobs:
     container:
       # renovate: datasource=node-version depName=node
       image: docker.io/library/node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81
+      volumes:
+        - /opt/cache:/var/cache/docker-nginx-build
     timeout-minutes: 60
     defaults:
       run:
@@ -32,6 +34,7 @@ jobs:
     env:
       BUILDX_BUILDER: pr-${{ forgejo.run_id }}
       BUILDX_CONTEXT: pr-context-${{ forgejo.run_id }}
+      CACHE_SCOPE: pull-request
 
     steps:
       - name: Install job tools
@@ -74,17 +77,33 @@ jobs:
               ;;
           esac
 
+          cache_from=()
+          cache_dir="/var/cache/docker-nginx-build/${CACHE_SCOPE}-amd64"
+          if [[ -f "${cache_dir}/index.json" ]]; then
+            cache_from=(--cache-from "type=local,src=${cache_dir}")
+          fi
+
           docker buildx build \
             --platform linux/amd64 \
             --pull \
+            "${cache_from[@]}" \
+            --cache-to "type=local,dest=${cache_dir},mode=max" \
             --output type=cacheonly \
             .
 
       - name: Build and test arm64
         run: |
+          cache_from=()
+          cache_dir="/var/cache/docker-nginx-build/${CACHE_SCOPE}-arm64"
+          if [[ -f "${cache_dir}/index.json" ]]; then
+            cache_from=(--cache-from "type=local,src=${cache_dir}")
+          fi
+
           docker buildx build \
             --platform linux/arm64 \
             --pull \
+            "${cache_from[@]}" \
+            --cache-to "type=local,dest=${cache_dir},mode=max" \
             --load \
             --tag docker-nginx:test-arm64 \
             .
