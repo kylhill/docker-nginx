@@ -59,6 +59,8 @@ jobs:
           docker buildx build \
             --platform linux/amd64 \
             --pull \
+            --provenance=mode=max \
+            --sbom=true \
             --cache-from "type=gha,scope=publish-amd64" \
             --cache-to "type=gha,scope=publish-amd64,mode=max" \
             --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
@@ -83,8 +85,8 @@ jobs:
           docker buildx build \
             --platform linux/arm64 \
             --pull \
-            --provenance=false \
-            --sbom=false \
+            --provenance=mode=max \
+            --sbom=true \
             --cache-from "type=gha,scope=publish-arm64" \
             --cache-to "type=gha,scope=publish-arm64,mode=max" \
             --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \

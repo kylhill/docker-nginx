@@ -103,6 +103,8 @@ jobs:
           docker buildx build \
             --platform linux/amd64 \
             --pull \
+            --provenance=mode=max \
+            --sbom=true \
             "${cache_from[@]}" \
             --cache-to "type=local,dest=${cache_dir},mode=max" \
             --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
@@ -123,6 +125,8 @@ jobs:
           docker buildx build \
             --platform linux/arm64 \
             --pull \
+            --provenance=mode=max \
+            --sbom=true \
             "${cache_from[@]}" \
             --cache-to "type=local,dest=${cache_dir},mode=max" \
             --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
