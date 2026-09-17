@@ -3,7 +3,7 @@ name: Renovate
 
 on:
   schedule:
-    - cron: "32 9 * * 1"
+    - cron: "32 9 * * 5"
   workflow_dispatch:
 
 enable-email-notifications: true
