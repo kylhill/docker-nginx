@@ -34,6 +34,10 @@ jobs:
     env:
       BUILDX_BUILDER: ci-${{ forgejo.run_id }}
       BUILDX_CONTEXT: ci-context-${{ forgejo.run_id }}
+      # renovate: datasource=docker depName=moby/buildkit
+      BUILDKIT_IMAGE: docker.io/moby/buildkit:buildx-stable-1@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+      # renovate: datasource=docker depName=docker/buildkit-syft-scanner
+      SYFT_SCANNER_IMAGE: docker.io/docker/buildkit-syft-scanner:stable-1@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
 
     steps:
       - name: Install job tools
@@ -62,6 +66,7 @@ jobs:
           docker buildx create \
             --name "${BUILDX_BUILDER}" \
             --driver docker-container \
+            --driver-opt "image=${BUILDKIT_IMAGE}" \
             --use \
             "${BUILDX_CONTEXT}"
 
@@ -95,7 +100,9 @@ jobs:
             --platform linux/amd64 \
             --pull \
             --provenance=mode=max \
-            --sbom=true \
+            --sbom="generator=${SYFT_SCANNER_IMAGE}" \
+            --cache-from "type=registry,ref=${IMAGE}:buildcache-amd64" \
+            --cache-to "type=registry,ref=${IMAGE}:buildcache-amd64,mode=max,image-manifest=true,oci-mediatypes=true" \
             --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
             --metadata-file /tmp/amd64-metadata.json \
             .
@@ -109,7 +116,9 @@ jobs:
             --platform linux/arm64 \
             --pull \
             --provenance=mode=max \
-            --sbom=true \
+            --sbom="generator=${SYFT_SCANNER_IMAGE}" \
+            --cache-from "type=registry,ref=${IMAGE}:buildcache-arm64" \
+            --cache-to "type=registry,ref=${IMAGE}:buildcache-arm64,mode=max,image-manifest=true,oci-mediatypes=true" \
             --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
             --metadata-file /tmp/arm64-metadata.json \
             .

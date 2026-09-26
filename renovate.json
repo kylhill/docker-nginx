@@ -48,6 +48,16 @@
       "depNameTemplate": "node",
       "extractVersionTemplate": "^v?(?<version>\\d+)",
       "versioningTemplate": "node"
+    },
+    {
+      "customType": "regex",
+      "description": "Update pinned CI helper images",
+      "managerFilePatterns": [
+        "/^\\.(forgejo|github)/workflows/(docker-publish|pull-request)\\.yml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>docker) depName=(?<depName>[^\\s]+)\\n\\s+[A-Z0-9_]+_IMAGE: docker\\.io/[^\\s:]+(?:/[^\\s:]+)*:(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ]
     }
   ],
   "packageRules": [
