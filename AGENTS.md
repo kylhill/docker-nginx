@@ -97,8 +97,9 @@ remote Docker daemons without shared filesystem paths.
 Before creating Buildx, the job snapshots the runner's Docker endpoint and TLS
 settings into a per-run Docker context and passes that context to the builder.
 Keep context and builder names distinct: Buildx also exposes contexts as builders.
-Cleanup removes only successfully created builders and contexts. Publishing
-and pull-request builds use separate persistent local cache scopes.
+Cleanup removes only successfully created builders and contexts. Pull-request
+builds use a dedicated persistent local cache; credentialed publishing does not
+consume that PR-writable cache.
 After publishing, retention keeps the newest 10 matching `sha-[a-f0-9]{12}`
 tags, preserving `latest`, nonmatching tags/digests, and other packages.
 Actual disk reclamation requires Forgejo server cleanup/GC, including dangling

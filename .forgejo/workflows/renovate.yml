@@ -14,16 +14,17 @@ jobs:
     container:
       image: docker.io/renovate/renovate:latest@sha256:3355b181cd74fbd5c9f0117f09819166fbaa86f6ded72904f655a00052b26f68
       volumes:
-        - /opt/cache:/tmp/renovate/containerbase
+        - /opt/cache/renovate:/tmp/renovate/cache
     env:
       LOG_LEVEL: info
-      RENOVATE_CONTAINERBASE_DIR: /tmp/renovate/containerbase
+      RENOVATE_CACHE_DIR: /tmp/renovate/cache
       RENOVATE_ENDPOINT: https://git.tacomafia.net/api/v1
       RENOVATE_GITHUB_COM_TOKEN: ${{ secrets.RENOVATE_GITHUB_COM_TOKEN }}
       RENOVATE_HOST_RULES: '[{"hostType":"forgejo","matchHost":"https://git.tacomafia.net/","allowInternal":true}]'
       RENOVATE_INTERNAL_HOST_ACCESS: block
       RENOVATE_ONBOARDING: "false"
       RENOVATE_PLATFORM: forgejo
+      RENOVATE_REPOSITORY_CACHE: enabled
       RENOVATE_REPOSITORIES: kylhill/docker-nginx
       RENOVATE_REQUIRE_CONFIG: required
       RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
