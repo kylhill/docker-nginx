@@ -75,8 +75,8 @@ SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 # renovate: datasource=apk depName=patch
 ARG PATCH_VERSION=2.8-r0
 # renovate: datasource=github-release-attachments depName=crowdsecurity/cs-nginx-bouncer
-ARG CROWDSEC_BOUNCER_VERSION=1.2.2
-ARG CROWDSEC_BOUNCER_SHA256=10876f49e78cb7e3d03340d9f80a6586375ccd230acda2fe5e994b7ade2bd3db
+ARG CROWDSEC_BOUNCER_VERSION=1.2.3
+ARG CROWDSEC_BOUNCER_SHA256=8cb0c176f01bda3a5fc5493d20bcd7261630c7dfbd60c00b2bff8eefc8fe84d5
 LABEL io.github.kylhill.docker-nginx.crowdsec-bouncer.version="${CROWDSEC_BOUNCER_VERSION}"
 RUN --mount=type=bind,source=patches/crowdsec-lua.patch,target=/tmp/crowdsec-lua.patch,ro \
     set -eux; \
