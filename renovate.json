@@ -1,7 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    "group:all"
   ],
   "enabledManagers": [
     "dockerfile",
@@ -61,21 +62,6 @@
     }
   ],
   "packageRules": [
-    {
-      "matchDatasources": [
-        "apk"
-      ],
-      "groupName": "Alpine base and packages"
-    },
-    {
-      "matchDatasources": [
-        "docker"
-      ],
-      "matchPackageNames": [
-        "/(^|\\/)alpine$/"
-      ],
-      "groupName": "Alpine base and packages"
-    },
     {
       "matchManagers": [
         "github-actions"
