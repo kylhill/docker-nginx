@@ -12,7 +12,7 @@ jobs:
   renovate:
     runs-on: oci-deps
     container:
-      image: docker.io/renovate/renovate:latest@sha256:5df12b8646d3fae87c5a0f1db5f580f24542fe1b7309425762eefcd89e259882
+      image: docker.io/renovate/renovate:latest@sha256:23a7b278b1ed21108cbf872f7464aeff1a7f0df786fc09d3217ef7e55b483665
       volumes:
         - /opt/cache/renovate:/tmp/renovate/cache
     env:

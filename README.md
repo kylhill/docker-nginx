@@ -157,3 +157,16 @@ CrowdSec release version and archive checksum are updated together. Its custom
 manager adds the upstream `v` prefix for release/digest lookups and removes it
 when writing the Dockerfile version; digest lookups require the exact release
 tag, not an extracted numeric version.
+
+Routine digest refreshes use `group:allDigest`. Explicit Alpine and Node groups
+keep coupled dependencies together. Native Dockerfile extraction manages
+literal `apk add` version pins; a small custom matcher handles the separately
+downloaded `lua-resty-string` archive. The Renovate workflow uses an image with native APK extraction support.
+
+The APK registry rule must match the Alpine base branch. When upgrading that
+branch, update its registry URL and package pins together, including nginx and
+its dynamic modules, and verify both image architectures. For Node LTS major
+updates, verify that the image digest matches the new tag. No post-upgrade
+synchronization script runs. CrowdSec updates require the selected release's
+checksum; an unresolved checksum remains empty so build verification fails
+rather than using the previous release's checksum.
