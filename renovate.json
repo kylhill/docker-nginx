@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended",
+    "config:best-practices",
     "group:all"
   ],
   "enabledManagers": [
@@ -86,8 +86,5 @@
       ],
       "enabled": false
     }
-  ],
-  "automerge": false,
-  "dependencyDashboard": false,
-  "prConcurrentLimit": 3
+  ]
 }
