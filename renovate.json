@@ -4,6 +4,9 @@
     "config:best-practices",
     "group:allDigest"
   ],
+  "prHourlyLimit": 0,
+  "prConcurrentLimit": 0,
+  "branchConcurrentLimit": 0,
   "enabledManagers": [
     "dockerfile",
     "github-actions",
