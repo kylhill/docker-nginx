@@ -8,6 +8,7 @@ name: Pull request validation
     paths:
       - Dockerfile
       - .dockerignore
+      - .forgejo/buildkitd.toml
       - patches/**
       - scripts/**
       - tests/**
@@ -32,7 +33,7 @@ jobs:
       run:
         shell: bash
     env:
-      BUILDX_BUILDER: pr-${{ forgejo.run_id }}
+      BUILDX_BUILDER: docker-nginx-pr
       BUILDX_CONTEXT: pr-context-${{ forgejo.run_id }}
       # renovate: datasource=docker depName=moby/buildkit
       BUILDKIT_IMAGE: docker.io/moby/buildkit:buildx-stable-1@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
@@ -63,7 +64,9 @@ jobs:
         run: |
           docker buildx create \
             --name "${BUILDX_BUILDER}" \
+            --node "${BUILDX_BUILDER}0" \
             --driver docker-container \
+            --buildkitd-config .forgejo/buildkitd.toml \
             --driver-opt "image=${BUILDKIT_IMAGE}" \
             --use \
             "${BUILDX_CONTEXT}"
@@ -85,13 +88,17 @@ jobs:
             cache_from=(--cache-from "type=local,src=${cache_dir}")
           fi
 
+          rm -rf -- "${cache_dir}.next"
           docker buildx build \
             --platform linux/amd64 \
             --pull \
             "${cache_from[@]}" \
-            --cache-to "type=local,dest=${cache_dir},mode=max" \
+            --cache-to "type=local,dest=${cache_dir}.next,mode=max" \
             --output type=cacheonly \
             .
+
+          rm -rf -- "${cache_dir}"
+          mv -- "${cache_dir}.next" "${cache_dir}"
 
       - name: Build and test arm64
         run: |
@@ -101,14 +108,18 @@ jobs:
             cache_from=(--cache-from "type=local,src=${cache_dir}")
           fi
 
+          rm -rf -- "${cache_dir}.next"
           docker buildx build \
             --platform linux/arm64 \
             --pull \
             "${cache_from[@]}" \
-            --cache-to "type=local,dest=${cache_dir},mode=max" \
+            --cache-to "type=local,dest=${cache_dir}.next,mode=max" \
             --load \
             --tag docker-nginx:test-arm64 \
             .
+
+          rm -rf -- "${cache_dir}"
+          mv -- "${cache_dir}.next" "${cache_dir}"
 
           IMAGE=docker-nginx:test-arm64 \
           PLATFORM=linux/arm64 \
@@ -122,7 +133,7 @@ jobs:
 
       - name: Remove Buildx builder
         if: always() && steps.builder.outcome == 'success'
-        run: docker buildx rm "${BUILDX_BUILDER}"
+        run: docker buildx rm --keep-state "${BUILDX_BUILDER}"
 
       - name: Remove Docker context
         if: always() && steps.docker_context.outcome == 'success'

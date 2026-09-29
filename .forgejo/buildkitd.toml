@@ -1,0 +1,7 @@
+# Each workflow has a separate persistent BuildKit state volume.
+# GC thresholds are targets, not hard quotas; active builds can exceed them.
+[worker.oci]
+  gc = true
+  reservedSpace = "2GB"
+  maxUsedSpace = "15GB"
+  minFreeSpace = "10GB"

@@ -131,7 +131,21 @@ QEMU/binfmt emulation for non-native builds). Test fixtures are transferred
 through the Docker API, not host bind mounts.
 The job creates a per-run Docker context from the runner's connection settings,
 including TLS certificates, and passes it explicitly to Buildx. The builder and
-context are removed afterward only if their creation succeeded.
+context are removed afterward only if their creation succeeded. PR builds use
+`docker-nginx-pr`; publishing uses `docker-nginx-publish`. Both recreate their
+builder with a stable node name and remove it with `--keep-state`, retaining
+separate Docker state volumes inside the runner's persistent rootless Docker
+storage. Per-run contexts remain ephemeral. The `oci-build` runner has capacity
+one, so jobs using these fixed names run sequentially; retain this serialization
+if runner capacity changes.
+
+`.forgejo/buildkitd.toml` enables BuildKit garbage collection with a 15 GB
+usage target per builder, a 2 GB retained-cache floor, and a 10 GB free-space
+target. These are GC thresholds, not filesystem quotas. The Docker daemon's
+builder GC configuration does not apply to these BuildKit containers. Local
+PR cache exports and publishing's registry caches remain available as fallbacks;
+publishing does not import PR state. Removing a builder preserves its state,
+but removing its Docker volume or the runner's Docker data directory clears it.
 Set the repository's `REGISTRY_TOKEN` Actions secret to
 a token with `write:package` scope and write permissions for the package owner.
 

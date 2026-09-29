@@ -1,16 +1,21 @@
 ---
 name: Renovate
 
-on:
+"on":
   schedule:
     - cron: "32 9 * * 5"
   workflow_dispatch:
 
 enable-email-notifications: true
-   
+
+concurrency:
+  group: renovate-${{ forgejo.repository }}
+  cancel-in-progress: false
+
 jobs:
   renovate:
     runs-on: oci-deps
+    timeout-minutes: 60
     container:
       image: docker.io/renovate/renovate:latest@sha256:23a7b278b1ed21108cbf872f7464aeff1a7f0df786fc09d3217ef7e55b483665
       volumes:
