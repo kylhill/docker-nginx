@@ -1,33 +1,43 @@
 # Repository Agent Instructions
 
-## Build Commands
+## Validation loop
+
+Use the scripts as the canonical entry points; do not build manually first.
 
 ```bash
-# Build for local architecture
-docker build -t docker-nginx .
-
-# Build multi-platform (as CI does)
-docker buildx build --platform linux/amd64,linux/arm64 -t docker-nginx .
+scripts/verify-static.sh                                  # offline checks
+scripts/verify-image.sh                                   # build + smoke
+TEST_CASES=contract,enabled,nonroot scripts/verify-image.sh # build + full suite
 ```
+
+| Changed inputs | Required checks |
+| --- | --- |
+| Guidance/prose only | Review the diff and `git diff --check`; no Docker build |
+| Test scripts | `scripts/verify-static.sh` and affected runtime cases |
+| Fixtures/example config | Affected runtime cases against a current image |
+| Dockerfile/packages/CrowdSec patch | Build once and run the full native suite |
+| Architecture-sensitive dependencies | Both architecture builds and native runtime coverage through CI |
+| Retention helper | `scripts/verify-static.sh`; no nginx build |
+| CI workflows | Offline checks and review platform, cache, export, and cleanup behavior; CI verifies runner-specific execution |
+
+`verify-image.sh` defaults to `TEST_CASES=contract` and image
+`docker-nginx:verify`. It accepts `IMAGE`, `SKIP_BUILD=1`, `PLATFORM` (one
+platform), `DOCKERFILE`, `BUILD_CONTEXT`, and `BUILD_NETWORK` (default `host`
+for this development daemon; use `default` for builders with a working bridge).
+`verify-integration.sh` never
+builds and defaults to all cases. Both enable Lua dependency checks for the
+contract case. Reuse an image only while its build inputs remain unchanged.
+After smoke passes, use `TEST_CASES=enabled,nonroot scripts/verify-integration.sh`
+to complete coverage without repeating the contract case.
+
+Run affected cases during iteration and the required coverage once after the
+final relevant edit. Repeat passed checks only after relevant input changes or
+when a failure leaves a concern unresolved. Report what ran and any checks
+that could not run. No repository-specific skill is needed for this loop.
 
 The development host has no usable default Docker bridge network. Prefer
-`--network host` for ad-hoc containers that need networking, and `--network none`
-for offline checks. The integration suite's explicit, user-defined network is
-separate; preserve it for container-to-container DNS and isolation.
-
-## Verification
-
-```bash
-scripts/verify-image.sh
-scripts/verify-integration.sh
-```
-
-`scripts/verify-image.sh` is the core smoke test after
-Dockerfile or container-runtime changes. `scripts/verify-integration.sh` covers
-the required external configuration contract, CrowdSec, TLS, HTTP/2, direct
-nginx PID 1 operation, graceful shutdown, read-only mode, and arbitrary UIDs.
-Its `contract`, `enabled`, and `nonroot` cases can be selected with
-`TEST_CASES`; all run by default.
+`--network host` for ad-hoc containers that need networking and `--network none`
+for offline checks. Preserve the integration suite's explicit network.
 
 Test fixtures use separate per-run named volumes populated with `docker cp`
 through stopped staging containers from `IMAGE`, without starting nginx.
@@ -35,6 +45,10 @@ Keep workload configuration mounts read-only and preserve fixture permissions.
 No fixture paths need to be shared with the Docker daemon. Register created
 volumes and staging containers for EXIT cleanup; remove all staging/workload
 containers before volumes on both success and failure.
+Keep public runtime contract paths explicit in assertions. Put test-only feature
+values in `tests/fixtures/features.env` and render templates from those values;
+avoid duplicating ports, credentials, and response text in shell assertions.
+Prefer observable behavior over nginx log wording or upstream source line numbers.
 
 ## Architecture
 
@@ -77,33 +91,16 @@ installing its OpenResty dependency.
 ## CI and Publishing
 
 The expected workflow is local verification followed by a direct push to
-`main` on the authoritative Forgejo repository; GitHub is the CI and reporting
-mirror. Mirrored pushes run one GitHub job that builds both architectures,
-smoke-tests amd64 natively, runs the integration suite on amd64, and publishes
-the already-built platform digests to GHCR with `latest` and short-SHA tags,
-then retains the newest 10 matching SHA releases.
+`main` on authoritative Forgejo; GitHub is the CI and reporting mirror.
+GitHub tests amd64 natively; Forgejo tests arm64 natively. Both publish tagged
+manifests from the already-built platform digests.
 
-Forgejo also runs a single-job publishing workflow on the
-`oci-build` runner. It requires a native arm64 Docker daemon, builds amd64
-without running it, tests arm64 natively, then publishes the already-built
-platform digests to the registry with `latest` and short-SHA tags. It requires
-the
-`REGISTRY_TOKEN` secret with `write:package` scope and package-owner write
-permissions, Docker daemon access, and support for building both architectures
-(preconfigured emulation for non-native builds).
-The job uses the current Node.js LTS Alpine line and installs Bash, Docker CLI/Buildx, Git, OpenSSL,
-and Python 3 with `sh` before checkout. API-based fixture copying supports
-remote Docker daemons without shared filesystem paths.
-Before creating Buildx, the job snapshots the runner's Docker endpoint and TLS
-settings into a per-run Docker context and passes that context to the builder.
-Keep context and builder names distinct: Buildx also exposes contexts as builders.
-Cleanup removes only successfully created builders and contexts. Pull-request
-builds use a dedicated persistent local cache; credentialed publishing does not
-consume that PR-writable cache.
-After publishing, retention keeps the newest 10 matching `sha-[a-f0-9]{12}`
-tags, preserving `latest`, nonmatching tags/digests, and other packages.
-Actual disk reclamation requires Forgejo server cleanup/GC, including dangling
-container digests.
+See [CI and publishing](docs/ci.md) for runner requirements and registry
+retention. Keep PR and credentialed publishing cache/state isolated. Forgejo
+uses separate persistent builders with fixed names and `--keep-state` cleanup;
+the runner must serialize jobs using those names. Keep ephemeral context names
+distinct from builder names and clean up only successfully created resources.
+Preserve the separate Forgejo cache export needed to avoid blob-upload conflicts.
 
 The weekly Forgejo Renovate workflow tracks the Dockerfile frontend, official
 Alpine base, direct Alpine packages, the CrowdSec bouncer version and archive

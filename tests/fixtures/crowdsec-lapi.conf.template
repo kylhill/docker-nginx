@@ -6,7 +6,7 @@ http {
     access_log /dev/stdout integration;
 
     server {
-        listen 8080;
+        listen @LAPI_PORT@;
 
         location /v1/decisions/stream {
             default_type application/json;

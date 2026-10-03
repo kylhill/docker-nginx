@@ -50,12 +50,16 @@ jobs:
             docker-cli-buildx \
             git \
             openssl \
-            python3
+            python3 \
+            shellcheck
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Check scripts and retention logic
+        run: scripts/verify-static.sh
 
       - name: Create Docker context
         id: docker_context
@@ -148,12 +152,8 @@ jobs:
           IMAGE=docker-nginx:test-arm64 \
           PLATFORM=linux/arm64 \
           SKIP_BUILD=1 \
+          TEST_CASES=contract,enabled,nonroot \
             scripts/verify-image.sh
-
-      - name: Run integration tests
-        env:
-          IMAGE: docker-nginx:test-arm64
-        run: scripts/verify-integration.sh
 
       - name: Publish multi-platform manifest
         run: |

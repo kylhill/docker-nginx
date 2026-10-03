@@ -69,37 +69,51 @@ runtime paths used by nginx.
 
 ## Build and verification
 
-Build for the local architecture:
-
-```bash
-docker build -t docker-nginx .
-```
-
-Build as CI does:
-
-```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t docker-nginx .
-```
-
-The development host does not provide a usable default Docker bridge network.
-Use `--network host` for ad-hoc containers that need network access, or
-`--network none` for offline checks. The integration suite uses its own explicit
-network and should retain that configuration.
-
-Run the smoke and integration suites:
+Use the image verifier to build once and run the smoke checks:
 
 ```bash
 scripts/verify-image.sh
-scripts/verify-integration.sh
 ```
 
-The smoke test builds the image and runs the integration suite's `contract`
-case against the basic example configuration. It waits for health, validates
-nginx and the CrowdSec Lua dependencies, confirms nginx is PID 1, and checks
-graceful shutdown. The full integration suite additionally covers CrowdSec
-enforcement, TLS/HTTP/2, and read-only arbitrary-UID mode.
-Select cases with `TEST_CASES=contract`, `TEST_CASES=enabled`, or
-`TEST_CASES=nonroot`.
+Build once and run all runtime cases, including Lua dependency checks:
+
+```bash
+TEST_CASES=contract,enabled,nonroot scripts/verify-image.sh
+```
+
+After the smoke checks have passed, run only the remaining cases:
+
+```bash
+TEST_CASES=enabled,nonroot scripts/verify-integration.sh
+```
+
+Run offline script and retention checks with `scripts/verify-static.sh`.
+The wrapper accepts `IMAGE` (default `docker-nginx:verify`), `SKIP_BUILD=1`,
+`PLATFORM` (one platform), `DOCKERFILE`, `BUILD_CONTEXT`, `BUILD_NETWORK`, and
+`TEST_CASES`. Builds default to host networking for the development daemon;
+set `BUILD_NETWORK=default` for a builder with a working bridge network.
+The integration script uses the same default image but never builds it.
+Reuse a prebuilt image only while its Dockerfile, patch, and dependency inputs
+remain unchanged. For example:
+
+```bash
+IMAGE=docker-nginx:verify SKIP_BUILD=1 TEST_CASES=nonroot scripts/verify-image.sh
+```
+
+The cases are `contract` (missing/invalid configuration, health, PID 1, Lua
+modules, and graceful shutdown), `enabled` (CrowdSec and TLS/HTTP/2), and
+`nonroot` (read-only arbitrary UID/GID operation and successful reload).
+Integration checks load Lua dependencies by default in `contract`;
+`CHECK_LUA_MODULES=0` explicitly omits that check.
+`TEST_UID` and `TEST_GID` select the arbitrary identity (defaults 12345:23456).
+`WAIT_TIMEOUT` sets readiness/exit deadlines in seconds (default 30), and
+`CURL_TIMEOUT` bounds each request (default 3).
+
+The development host has no usable default Docker bridge network. Use
+`--network host` for ad-hoc containers that need networking and `--network none`
+for offline checks. Preserve the integration suite's explicit network.
+Multi-platform build/export details live in [CI and publishing](docs/ci.md);
+local runtime checks use one loaded native image.
 
 Fixtures are copied through the Docker API (`docker cp`) into separate,
 per-run named volumes using stopped staging containers from the test image.
@@ -107,52 +121,16 @@ Workloads mount those volumes read-only. Local and remote Docker daemons use
 the same transfer path; no shared job/daemon filesystem is required. Exit
 cleanup removes staging and workload containers before removing fixture volumes,
 including when verification fails.
+Test-only ports, credentials, and response values live in
+[`features.env`](tests/fixtures/features.env), shared by fixture rendering and
+assertions. Lua search paths are shared by the smoke and CrowdSec fixtures.
 
-## Forgejo publishing
+## CI and publishing
 
-The Forgejo `docker-publish.yml` workflow runs on relevant pushes to `main` or
-manual dispatch. A single `oci-build` job requires a native arm64 Docker daemon
-and builds both architectures, but never loads or runs the amd64 image. It
-smoke-tests arm64 natively, runs the full integration suite on arm64, then
-builds and pushes
-`linux/amd64,linux/arm64` images to
-`git.tacomafia.net/<owner>/<repository>` with `latest` and `sha-<12-character SHA>`
-tags. After successful publishing, retention keeps the newest 10 matching
-`sha-[a-f0-9]{12}` tags for the lowercase repository image, preserving `latest`,
-all nonmatching tags/digests, and other packages. Cleanup errors fail the job.
-Actual disk reclamation depends on Forgejo server cleanup/garbage collection,
-including removal of dangling container digests.
-
-The job explicitly uses the current Node.js LTS Alpine line, providing Node.js
-for `actions/checkout`. Before checkout, a `sh` step installs Bash, Docker CLI
-and Buildx, Git, OpenSSL, and Python 3. The runner must provide Docker daemon
-access and support for building both architectures (including preconfigured
-QEMU/binfmt emulation for non-native builds). Test fixtures are transferred
-through the Docker API, not host bind mounts.
-The job creates a per-run Docker context from the runner's connection settings,
-including TLS certificates, and passes it explicitly to Buildx. The builder and
-context are removed afterward only if their creation succeeded. PR builds use
-`docker-nginx-pr`; publishing uses `docker-nginx-publish`. Both recreate their
-builder with a stable node name and remove it with `--keep-state`, retaining
-separate Docker state volumes inside the runner's persistent rootless Docker
-storage. Per-run contexts remain ephemeral. The `oci-build` runner has capacity
-one, so jobs using these fixed names run sequentially; retain this serialization
-if runner capacity changes.
-
-`.forgejo/buildkitd.toml` enables BuildKit garbage collection with a 15 GB
-usage target per builder, a 2 GB retained-cache floor, and a 10 GB free-space
-target. These are GC thresholds, not filesystem quotas. The Docker daemon's
-builder GC configuration does not apply to these BuildKit containers. Local
-PR cache exports and publishing's registry caches remain available as fallbacks;
-publishing does not import PR state. Removing a builder preserves its state,
-but removing its Docker volume or the runner's Docker data directory clears it.
-Set the repository's `REGISTRY_TOKEN` Actions secret to
-a token with `write:package` scope and write permissions for the package owner.
-
-This deliberately simpler workflow rebuilds for publishing after arm64 passes
-its native smoke and integration tests. GitHub provides the complementary
-native amd64 smoke and integration coverage while only building arm64. After
-publishing, each registry retains its newest 10 short-SHA releases.
+Forgejo is the authoritative repository; GitHub is the CI and reporting mirror.
+Both publish manifests from already-built platform digests after native runtime
+verification. See [CI and publishing](docs/ci.md) for runner requirements, cache
+isolation, credentials, and retention.
 
 ## Dependency updates
 

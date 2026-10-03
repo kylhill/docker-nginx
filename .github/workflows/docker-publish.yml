@@ -39,6 +39,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check scripts and retention logic
+        run: scripts/verify-static.sh
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
@@ -84,8 +87,8 @@ jobs:
           IMAGE=docker-nginx:test-amd64 \
           PLATFORM=linux/amd64 \
           SKIP_BUILD=1 \
+          TEST_CASES=contract,enabled,nonroot \
             scripts/verify-image.sh
-          IMAGE=docker-nginx:test-amd64 scripts/verify-integration.sh
 
       - name: Build arm64
         run: |

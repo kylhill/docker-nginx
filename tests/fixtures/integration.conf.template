@@ -1,5 +1,5 @@
 server {
-    listen 8080;
+    listen @HTTP_PORT@;
     server_name integration.test;
 
     location / {
@@ -11,7 +11,7 @@ server {
 }
 
 server {
-    listen 8443 ssl;
+    listen @TLS_PORT@ ssl;
     server_name integration.test;
 
     ssl_certificate /config/keys/cert.crt;
@@ -21,7 +21,7 @@ server {
     location / {
         default_type text/plain;
         content_by_lua_block {
-            ngx.say("secure-ok")
+            ngx.say("@TLS_BODY@")
         }
     }
 }
