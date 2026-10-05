@@ -5,9 +5,9 @@
 Use the scripts as the canonical entry points; do not build manually first.
 
 ```bash
-scripts/verify-static.sh                                  # offline checks
-scripts/verify-image.sh                                   # build + smoke
-TEST_CASES=contract,enabled,nonroot scripts/verify-image.sh # build + full suite
+scripts/verify-static.sh                         # offline checks
+scripts/verify-image.sh                          # build + full native suite
+TEST_CASES=contract scripts/verify-image.sh      # build + focused smoke
 ```
 
 | Changed inputs | Required checks |
@@ -19,15 +19,16 @@ TEST_CASES=contract,enabled,nonroot scripts/verify-image.sh # build + full suite
 | Architecture-sensitive dependencies | Both architecture builds and native runtime coverage through CI |
 | CI workflows | Offline checks and review platform, cache, export, and cleanup behavior; CI verifies runner-specific execution |
 
-`verify-image.sh` defaults to `TEST_CASES=contract` and image
-`docker-nginx:verify`. It accepts `IMAGE`, `SKIP_BUILD=1`, `PLATFORM` (one
-platform), `DOCKERFILE`, `BUILD_CONTEXT`, and `BUILD_NETWORK` (default `host`
-for this development daemon; use `default` for builders with a working bridge).
-`verify-integration.sh` never
-builds and defaults to all cases. Both enable Lua dependency checks for the
-contract case. Reuse an image only while its build inputs remain unchanged.
-After smoke passes, use `TEST_CASES=enabled,nonroot scripts/verify-integration.sh`
-to complete coverage without repeating the contract case.
+`verify-image.sh` always builds and defaults to all runtime cases and image
+`docker-nginx:verify`. It accepts `IMAGE`, `PLATFORM` (one platform),
+`DOCKERFILE`, `BUILD_CONTEXT`, and `BUILD_NETWORK` (default `host` for this
+development daemon; use `default` for builders with a working bridge).
+`verify-integration.sh` never builds and also defaults to all cases. Use it
+directly for a prebuilt image; published CI images are tested by digest on the
+native host architecture. Both entry points include Lua dependency checks in
+the contract case. Reuse an image only while its build inputs remain unchanged.
+After a focused smoke run, use
+`TEST_CASES=enabled,nonroot scripts/verify-integration.sh` to finish coverage.
 
 Run affected cases during iteration and the required coverage once after the
 final relevant edit. Repeat passed checks only after relevant input changes or

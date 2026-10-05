@@ -69,36 +69,30 @@ runtime paths used by nginx.
 
 ## Build and verification
 
-Use the image verifier to build once and run the smoke checks:
+Build once and run the full native suite:
 
 ```bash
 scripts/verify-image.sh
 ```
 
-Build once and run all runtime cases, including Lua dependency checks:
-
-```bash
-TEST_CASES=contract,enabled,nonroot scripts/verify-image.sh
-```
-
-After the smoke checks have passed, run only the remaining cases:
-
-```bash
-TEST_CASES=enabled,nonroot scripts/verify-integration.sh
-```
-
+For a focused smoke check, use `TEST_CASES=contract scripts/verify-image.sh`.
 Run offline script checks with `scripts/verify-static.sh`.
-The wrapper accepts `IMAGE` (default `docker-nginx:verify`), `SKIP_BUILD=1`,
-`PLATFORM` (one platform), `DOCKERFILE`, `BUILD_CONTEXT`, `BUILD_NETWORK`, and
-`TEST_CASES`. Builds default to host networking for the development daemon;
-set `BUILD_NETWORK=default` for a builder with a working bridge network.
-The integration script uses the same default image but never builds it.
-Reuse a prebuilt image only while its Dockerfile, patch, and dependency inputs
-remain unchanged. For example:
+The build wrapper requires Docker Buildx and accepts `IMAGE` (default
+`docker-nginx:verify`), `PLATFORM` (one platform), `DOCKERFILE`, `BUILD_CONTEXT`,
+`BUILD_NETWORK`, and `TEST_CASES`. Builds default to host networking for the
+development daemon; set `BUILD_NETWORK=default` for a builder with a working
+bridge network. Without `PLATFORM`, builds target the native architecture.
+
+The integration script never builds and defaults to all runtime cases. Use it
+directly to test an existing image, optionally selecting cases:
 
 ```bash
-IMAGE=docker-nginx:verify SKIP_BUILD=1 TEST_CASES=nonroot scripts/verify-image.sh
+IMAGE=docker-nginx:verify TEST_CASES=nonroot scripts/verify-integration.sh
 ```
+
+Reuse an image only while its Dockerfile, patch, and dependency inputs remain
+unchanged. After a focused smoke run, use
+`TEST_CASES=enabled,nonroot scripts/verify-integration.sh` to finish coverage.
 
 The cases are `contract` (missing/invalid configuration, health, PID 1, Lua
 modules, and graceful shutdown), `enabled` (CrowdSec and TLS/HTTP/2), and
@@ -144,10 +138,10 @@ updates the Forgejo job's Node container tag and digest, including major updates
 
 `lua-resty-string` is extracted without its OpenResty dependency, so its Alpine
 package is pinned and updated with the other direct APK dependencies. The
-CrowdSec release version and archive checksum are updated together. Its custom
-manager adds the upstream `v` prefix for release/digest lookups and removes it
-when writing the Dockerfile version; digest lookups require the exact release
-tag, not an extracted numeric version.
+CrowdSec release version and archive checksum are updated together. The Dockerfile stores
+the exact upstream release tag, including its `v` prefix, so Renovate uses it
+directly for release and checksum lookups. The image version label uses that
+tag; `bouncer_version.lua` retains the numeric version expected by deployments.
 
 Routine digest refreshes use `group:allDigest`. The explicit Alpine group
 keeps coupled dependencies together. Native Dockerfile extraction manages

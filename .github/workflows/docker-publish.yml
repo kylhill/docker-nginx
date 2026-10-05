@@ -66,44 +66,25 @@ jobs:
 
       - name: Build amd64
         run: |
-          docker buildx build \
-            --platform linux/amd64 \
-            --pull \
-            --provenance=mode=max \
-            --sbom="generator=${SYFT_SCANNER_IMAGE}" \
+          digest="$(scripts/build-platform.sh linux/amd64 /tmp/amd64-metadata.json \
             --cache-from "type=gha,scope=publish-amd64" \
             --cache-to "type=gha,scope=publish-amd64,mode=max" \
-            --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
-            --metadata-file /tmp/amd64-metadata.json \
-            .
-
-          digest="$(jq -er '."containerimage.digest"' /tmp/amd64-metadata.json)"
+            --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true"
+          )"
           echo "AMD64_DIGEST=${digest}" >> "${GITHUB_ENV}"
           docker pull "${IMAGE}@${digest}"
-          docker tag "${IMAGE}@${digest}" docker-nginx:test-amd64
 
       - name: Test amd64
         run: |
-          IMAGE=docker-nginx:test-amd64 \
-          PLATFORM=linux/amd64 \
-          SKIP_BUILD=1 \
-          TEST_CASES=contract,enabled,nonroot \
-            scripts/verify-image.sh
+          IMAGE="${IMAGE}@${AMD64_DIGEST}" scripts/verify-integration.sh
 
       - name: Build arm64
         run: |
-          docker buildx build \
-            --platform linux/arm64 \
-            --pull \
-            --provenance=mode=max \
-            --sbom="generator=${SYFT_SCANNER_IMAGE}" \
+          digest="$(scripts/build-platform.sh linux/arm64 /tmp/arm64-metadata.json \
             --cache-from "type=gha,scope=publish-arm64" \
             --cache-to "type=gha,scope=publish-arm64,mode=max" \
-            --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
-            --metadata-file /tmp/arm64-metadata.json \
-            .
-
-          digest="$(jq -er '."containerimage.digest"' /tmp/arm64-metadata.json)"
+            --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true"
+          )"
           echo "ARM64_DIGEST=${digest}" >> "${GITHUB_ENV}"
 
       - name: Publish multi-platform manifest

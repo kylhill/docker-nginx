@@ -65,3 +65,13 @@ The tagged manifest uses the already-built platform digests. GitHub provides
 the complementary native amd64 smoke and integration coverage while only
 building arm64. After publishing, GitHub retains its newest 10 short-SHA releases through its CI job;
 Forgejo uses the periodic account rule above.
+
+Both publishing workflows use `scripts/build-platform.sh` for platform builds
+and digest extraction. The workflows retain their own cache and export options;
+the helper writes Buildx progress to stderr and prints the digest to stdout.
+When `SYFT_SCANNER_IMAGE` is set, it enables the shared provenance and SBOM
+options; PR builds omit that publishing-only environment variable.
+Published images are pulled and tested directly by digest, using
+`verify-integration.sh` on arm64 in Forgejo and amd64 in GitHub. Forgejo PR
+validation loads its native image locally; the cache-only amd64 build remains
+an explicit Buildx command. These commands add no runtime emulation setup.

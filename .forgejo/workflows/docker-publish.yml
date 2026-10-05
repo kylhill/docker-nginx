@@ -102,40 +102,21 @@ jobs:
               ;;
           esac
 
-          docker buildx build \
-            --platform linux/amd64 \
-            --pull \
-            --provenance=mode=max \
-            --sbom="generator=${SYFT_SCANNER_IMAGE}" \
-            --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
-            --metadata-file /tmp/amd64-metadata.json \
-            .
-
-          digest="$(python3 -c 'import json; print(json.load(open("/tmp/amd64-metadata.json"))["containerimage.digest"])')"
+          digest="$(scripts/build-platform.sh linux/amd64 /tmp/amd64-metadata.json \
+            --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true"
+          )"
           echo "AMD64_DIGEST=${digest}" >> "${FORGEJO_ENV}"
 
       - name: Build and test arm64
         run: |
-          docker buildx build \
-            --platform linux/arm64 \
-            --pull \
-            --provenance=mode=max \
-            --sbom="generator=${SYFT_SCANNER_IMAGE}" \
-            --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
-            --metadata-file /tmp/arm64-metadata.json \
-            .
-
-          digest="$(python3 -c 'import json; print(json.load(open("/tmp/arm64-metadata.json"))["containerimage.digest"])')"
+          digest="$(scripts/build-platform.sh linux/arm64 /tmp/arm64-metadata.json \
+            --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true"
+          )"
           echo "ARM64_DIGEST=${digest}" >> "${FORGEJO_ENV}"
 
           docker pull "${IMAGE}@${digest}"
-          docker tag "${IMAGE}@${digest}" docker-nginx:test-arm64
 
-          IMAGE=docker-nginx:test-arm64 \
-          PLATFORM=linux/arm64 \
-          SKIP_BUILD=1 \
-          TEST_CASES=contract,enabled,nonroot \
-            scripts/verify-image.sh
+          IMAGE="${IMAGE}@${digest}" scripts/verify-integration.sh
 
       - name: Publish multi-platform manifest
         run: |

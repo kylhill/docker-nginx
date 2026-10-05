@@ -45,7 +45,7 @@ RUN set -eux; \
 
 # Install CrowdSec nginx bouncer
 # renovate: datasource=github-release-attachments depName=crowdsecurity/cs-nginx-bouncer
-ARG CROWDSEC_BOUNCER_VERSION=1.2.3
+ARG CROWDSEC_BOUNCER_VERSION=v1.2.3
 ARG CROWDSEC_BOUNCER_SHA256=8cb0c176f01bda3a5fc5493d20bcd7261630c7dfbd60c00b2bff8eefc8fe84d5
 LABEL io.github.kylhill.docker-nginx.crowdsec-bouncer.version="${CROWDSEC_BOUNCER_VERSION}"
 RUN --mount=type=bind,source=patches/crowdsec-lua.patch,target=/tmp/crowdsec-lua.patch,ro \
@@ -53,12 +53,12 @@ RUN --mount=type=bind,source=patches/crowdsec-lua.patch,target=/tmp/crowdsec-lua
     apk add --no-cache --virtual .crowdsec-build-deps \
       "patch=2.8-r0"; \
     CROWDSEC_ARCHIVE="/tmp/bouncer.tgz"; \
-    CROWDSEC_DIR="/tmp/crowdsec-nginx-bouncer-v${CROWDSEC_BOUNCER_VERSION}"; \
+    CROWDSEC_DIR="/tmp/crowdsec-nginx-bouncer-${CROWDSEC_BOUNCER_VERSION}"; \
     \
     # download, verify, and extract the bouncer tarball
     curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
       --connect-timeout 15 -o "$CROWDSEC_ARCHIVE" \
-      "https://github.com/crowdsecurity/cs-nginx-bouncer/releases/download/v${CROWDSEC_BOUNCER_VERSION}/crowdsec-nginx-bouncer.tgz"; \
+      "https://github.com/crowdsecurity/cs-nginx-bouncer/releases/download/${CROWDSEC_BOUNCER_VERSION}/crowdsec-nginx-bouncer.tgz"; \
     echo "${CROWDSEC_BOUNCER_SHA256}  ${CROWDSEC_ARCHIVE}" | sha256sum -c -; \
     tar -xzf "$CROWDSEC_ARCHIVE" -C /tmp; \
     \
@@ -74,7 +74,7 @@ RUN --mount=type=bind,source=patches/crowdsec-lua.patch,target=/tmp/crowdsec-lua
     install -d -m 0755 /usr/local/lua/crowdsec/plugins/crowdsec; \
     install -m 0644 "$CROWDSEC_DIR"/lua-mod/lib/plugins/crowdsec/*.lua \
       /usr/local/lua/crowdsec/plugins/crowdsec/; \
-    printf 'return "%s"\n' "$CROWDSEC_BOUNCER_VERSION" \
+    printf 'return "%s"\n' "${CROWDSEC_BOUNCER_VERSION#v}" \
         > /usr/local/lua/crowdsec/bouncer_version.lua; \
     \
     # install ban HTML template only (no captcha)
