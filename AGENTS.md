@@ -4,11 +4,8 @@
 
 Use the scripts as the canonical entry points; do not build manually first.
 
-```bash
-scripts/verify-static.sh                         # offline checks
-scripts/verify-image.sh                          # build + full native suite
-TEST_CASES=contract scripts/verify-image.sh      # build + focused smoke
-```
+See [Build and verification](README.md#build-and-verification) for canonical
+commands, options, and test cases.
 
 | Changed inputs | Required checks |
 | --- | --- |
@@ -18,17 +15,6 @@ TEST_CASES=contract scripts/verify-image.sh      # build + focused smoke
 | Dockerfile/packages/CrowdSec patch | Build once and run the full native suite |
 | Architecture-sensitive dependencies | Both architecture builds and native runtime coverage through CI |
 | CI workflows | Offline checks and review platform, cache, export, and cleanup behavior; CI verifies runner-specific execution |
-
-`verify-image.sh` always builds and defaults to all runtime cases and image
-`docker-nginx:verify`. It accepts `IMAGE`, `PLATFORM` (one platform),
-`DOCKERFILE`, `BUILD_CONTEXT`, and `BUILD_NETWORK` (default `host` for this
-development daemon; use `default` for builders with a working bridge).
-`verify-integration.sh` never builds and also defaults to all cases. Use it
-directly for a prebuilt image; published CI images are tested by digest on the
-native host architecture. Both entry points include Lua dependency checks in
-the contract case. Reuse an image only while its build inputs remain unchanged.
-After a focused smoke run, use
-`TEST_CASES=enabled,nonroot scripts/verify-integration.sh` to finish coverage.
 
 Run affected cases during iteration and the required coverage once after the
 final relevant edit. Repeat passed checks only after relevant input changes or

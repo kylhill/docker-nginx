@@ -78,10 +78,11 @@ scripts/verify-image.sh
 For a focused smoke check, use `TEST_CASES=contract scripts/verify-image.sh`.
 Run offline script checks with `scripts/verify-static.sh`.
 The build wrapper requires Docker Buildx and accepts `IMAGE` (default
-`docker-nginx:verify`), `PLATFORM` (one platform), `DOCKERFILE`, `BUILD_CONTEXT`,
-`BUILD_NETWORK`, and `TEST_CASES`. Builds default to host networking for the
-development daemon; set `BUILD_NETWORK=default` for a builder with a working
-bridge network. Without `PLATFORM`, builds target the native architecture.
+`docker-nginx:verify`), `BUILD_NETWORK`, and `TEST_CASES`. Builds default to host
+networking for the development daemon; set `BUILD_NETWORK=default` for a builder with a working
+bridge network. The wrapper always builds this repository’s Dockerfile for the
+native architecture. Use Buildx directly for alternate Dockerfiles, build
+contexts, or platforms.
 
 The integration script never builds and defaults to all runtime cases. Use it
 directly to test an existing image, optionally selecting cases:
@@ -130,7 +131,8 @@ isolation, credentials, and retention.
 The Dockerfile frontend, official Alpine base, direct Alpine packages, and
 CrowdSec bouncer archive are pinned. Renovate runs weekly on the authoritative
 Forgejo repository and opens pull requests for Dockerfile dependency updates.
-The Alpine base and package pins are grouped so a stable-branch transition is
+All APK dependencies join the Alpine runtime group automatically; a separate
+rule puts the Alpine base in that same group so a stable-branch transition is
 applied atomically. Actions in GitHub and Forgejo workflows are pinned to commit
 SHAs with version comments, allowing Renovate to update them safely. Renovate
 also updates pinned CI helper image digests. The standard GitHub Actions manager

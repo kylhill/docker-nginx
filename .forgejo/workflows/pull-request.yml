@@ -87,8 +87,8 @@ jobs:
 
       - name: Build and test arm64
         run: |
-          scripts/build-platform.sh linux/arm64 /tmp/arm64-metadata.json \
-            --load --tag docker-nginx:test-arm64
+          docker buildx build --platform linux/arm64 --pull \
+            --load --tag docker-nginx:test-arm64 .
 
           IMAGE=docker-nginx:test-arm64 \
             scripts/verify-integration.sh

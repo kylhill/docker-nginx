@@ -60,29 +60,19 @@
       ],
       "registryUrls": [
         "https://dl-cdn.alpinelinux.org/alpine?branch=v3.24&components=main,community&arch=x86_64"
-      ]
+      ],
+      "groupName": "Alpine runtime dependencies",
+      "groupSlug": "alpine-runtime",
+      "separateMajorMinor": false
     },
     {
-      "description": "Keep the Alpine base and all APK pins compatible on both architectures",
+      "description": "Keep the Alpine base in the APK dependency group",
       "matchDatasources": [
-        "docker",
-        "apk"
+        "docker"
       ],
       "matchPackageNames": [
         "docker.io/library/alpine",
-        "alpine",
-        "curl",
-        "lua-resty-http",
-        "lua-resty-openssl",
-        "lua-resty-string",
-        "lua5.1-cjson",
-        "nginx",
-        "nginx-mod-http-brotli",
-        "nginx-mod-http-geoip2",
-        "nginx-mod-http-lua",
-        "nginx-mod-http-zstd",
-        "tzdata",
-        "patch"
+        "alpine"
       ],
       "groupName": "Alpine runtime dependencies",
       "groupSlug": "alpine-runtime",

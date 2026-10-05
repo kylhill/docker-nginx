@@ -70,7 +70,8 @@ Both publishing workflows use `scripts/build-platform.sh` for platform builds
 and digest extraction. The workflows retain their own cache and export options;
 the helper writes Buildx progress to stderr and prints the digest to stdout.
 When `SYFT_SCANNER_IMAGE` is set, it enables the shared provenance and SBOM
-options; PR builds omit that publishing-only environment variable.
+options. PR builds use Buildx directly because they do not need publishing
+attestations or digest extraction.
 Published images are pulled and tested directly by digest, using
 `verify-integration.sh` on arm64 in Forgejo and amd64 in GitHub. Forgejo PR
 validation loads its native image locally; the cache-only amd64 build remains
