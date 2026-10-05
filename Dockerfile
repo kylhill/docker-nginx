@@ -20,11 +20,8 @@ RUN set -eux; \
   # lua-resty-string declares an OpenResty-specific package dependency even
   # though nginx-mod-http-lua provides the same Lua runtime. Extract the
   # architecture-independent Lua files without installing a second nginx.
-  ALPINE_ARCH="$(apk --print-arch)"; \
-  ALPINE_BRANCH="v$(cut -d. -f1,2 /etc/alpine-release)"; \
-  wget -q -O "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk" \
-    "https://dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}/community/${ALPINE_ARCH}/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk"; \
-  test -f "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk"; \
+  apk fetch --no-cache --no-progress --match package --output /tmp \
+    "lua-resty-string-${LUA_RESTY_STRING_VERSION}"; \
   apk add --no-cache --no-progress \
     "curl=8.22.0-r0" \
     "lua-resty-http=0.17.2-r0" \
