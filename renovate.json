@@ -43,21 +43,6 @@
     },
     {
       "customType": "regex",
-      "description": "Update the Forgejo job to the newest Node.js LTS major",
-      "managerFilePatterns": [
-        "/^\\.forgejo/workflows/(docker-publish|pull-request)\\.yml$/"
-      ],
-      "matchStrings": [
-        "# renovate: datasource=node-version depName=node\\n\\s+image: docker\\.io/library/node:(?<currentValue>\\d+)-alpine"
-      ],
-      "datasourceTemplate": "node-version",
-      "depNameTemplate": "node",
-      "extractVersionTemplate": "^v?(?<version>\\d+)",
-      "versioningTemplate": "node",
-      "depTypeTemplate": "runtime"
-    },
-    {
-      "customType": "regex",
       "description": "Update pinned CI helper images",
       "managerFilePatterns": [
         "/^\\.(forgejo|github)/workflows/(docker-publish|pull-request)\\.yml$/"
@@ -79,21 +64,6 @@
         "https://dl-cdn.alpinelinux.org/alpine?branch=v3.24&components=main,community&arch=x86_64"
       ],
       "commitMessageTopic": "Alpine package {{depName}}"
-    },
-    {
-      "matchManagers": [
-        "github-actions"
-      ],
-      "matchDatasources": [
-        "docker"
-      ],
-      "matchPackageNames": [
-        "/(^|\\/)node$/"
-      ],
-      "matchUpdateTypes": [
-        "major"
-      ],
-      "enabled": false
     },
     {
       "description": "Keep the Alpine base and all APK pins compatible on both architectures",
@@ -122,21 +92,14 @@
       "separateMajorMinor": false
     },
     {
-      "description": "Keep the Node LTS tag and matching container digest together",
-      "matchPackageNames": [
-        "node",
-        "docker.io/library/node"
-      ],
-      "groupName": "Node LTS runtime",
-      "groupSlug": "node-lts-runtime",
-      "separateMajorMinor": false
-    },
-    {
       "description": "Describe image updates consistently across native and custom extraction",
       "matchDatasources": [
         "docker"
       ],
-      "commitMessageTopic": "container {{depName}}"
+      "commitMessageTopic": "container {{depName}}",
+      "prBodyDefinitions": {
+        "Type": "container"
+      }
     },
     {
       "matchDatasources": [
@@ -148,13 +111,35 @@
       "commitMessageTopic": "CrowdSec nginx bouncer"
     },
     {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepTypes": [
+        "action"
+      ],
+      "commitMessageTopic": "CI action {{depName}}"
+    },
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepTypes": [
+        "workflow"
+      ],
+      "commitMessageTopic": "CI workflow {{depName}}"
+    },
+    {
       "matchDatasources": [
-        "node-version"
+        "docker"
+      ],
+      "matchUpdateTypes": [
+        "digest",
+        "pinDigest"
       ],
       "matchPackageNames": [
-        "node"
+        "docker.io/renovate/renovate"
       ],
-      "commitMessageTopic": "Node.js LTS runtime"
+      "changelogUrl": "https://github.com/renovatebot/renovate/releases"
     }
   ]
 }

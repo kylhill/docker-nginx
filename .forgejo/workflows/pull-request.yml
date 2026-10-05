@@ -24,7 +24,6 @@ jobs:
     if: forgejo.event.pull_request.head.repo.full_name == forgejo.repository
     runs-on: oci-build
     container:
-      # renovate: datasource=node-version depName=node
       image: docker.io/library/node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
       volumes:
         - /opt/cache/docker-nginx-pr:/var/cache/docker-nginx-build

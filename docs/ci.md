@@ -12,7 +12,7 @@ all nonmatching tags/digests, and other packages. Cleanup errors fail the job.
 Actual disk reclamation depends on Forgejo server cleanup/garbage collection,
 including removal of dangling container digests.
 
-The job explicitly uses the current Node.js LTS Alpine line, providing Node.js
+The job uses a pinned Node.js Alpine image managed by Renovate, providing Node.js
 for `actions/checkout`. Before checkout, a `sh` step installs Bash, Docker CLI
 and Buildx, Git, OpenSSL, Python 3, and ShellCheck. Offline script and retention
 checks run before build setup. The runner must provide Docker daemon

@@ -140,8 +140,8 @@ Forgejo repository and opens pull requests for Dockerfile dependency updates.
 The Alpine base and package pins are grouped so a stable-branch transition is
 applied atomically. Actions in GitHub and Forgejo workflows are pinned to commit
 SHAs with version comments, allowing Renovate to update them safely. Renovate
-also updates pinned CI helper image digests. The Forgejo job's Node major is
-updated only when the Node.js release feed marks a newer major as LTS.
+also updates pinned CI helper image digests. The standard GitHub Actions manager
+updates the Forgejo job's Node container tag and digest, including major updates.
 
 `lua-resty-string` is extracted without its OpenResty dependency, so its Alpine
 package is pinned and updated with the other direct APK dependencies. The
@@ -150,14 +150,14 @@ manager adds the upstream `v` prefix for release/digest lookups and removes it
 when writing the Dockerfile version; digest lookups require the exact release
 tag, not an extracted numeric version.
 
-Routine digest refreshes use `group:allDigest`. Explicit Alpine and Node groups
-keep coupled dependencies together. Native Dockerfile extraction manages
+Routine digest refreshes use `group:allDigest`. The explicit Alpine group
+keeps coupled dependencies together. Native Dockerfile extraction manages
 literal `apk add` version pins; a small custom matcher handles the separately
 downloaded `lua-resty-string` archive. The Renovate workflow uses an image with native APK extraction support.
 
 The APK registry rule must match the Alpine base branch. When upgrading that
 branch, update its registry URL and package pins together, including nginx and
-its dynamic modules, and verify both image architectures. For Node LTS major
+its dynamic modules, and verify both image architectures. For Node major
 updates, verify that the image digest matches the new tag. No post-upgrade
 synchronization script runs. CrowdSec updates require the selected release's
 checksum; an unresolved checksum remains empty so build verification fails

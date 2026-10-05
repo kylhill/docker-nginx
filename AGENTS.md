@@ -106,5 +106,5 @@ The weekly Forgejo Renovate workflow tracks the Dockerfile frontend, official
 Alpine base, direct Alpine packages, the CrowdSec bouncer version and archive
 checksum, and action references in GitHub and Forgejo workflows. CI helper
 image digests are pinned and updated automatically. Pin actions to full commit
-SHAs with version comments so Renovate can update them. Update the Forgejo
-job's Node major only after the Node.js release feed marks that major as LTS.
+SHAs with version comments so Renovate can update them. Renovate updates the Forgejo
+job's Node container tag and digest through the standard GitHub Actions manager.
