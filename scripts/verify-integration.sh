@@ -7,7 +7,6 @@ BASIC_CONFIG_ROOT="${REPOSITORY_ROOT}/examples/basic/config"
 IMAGE="${IMAGE:-docker-nginx:verify}"
 PREFIX="${PREFIX:-docker-nginx-integration-$$}"
 TEST_CASES="${TEST_CASES:-contract,enabled,nonroot}"
-CHECK_LUA_MODULES="${CHECK_LUA_MODULES:-1}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-30}"
 CURL_TIMEOUT="${CURL_TIMEOUT:-3}"
 TEST_UID="${TEST_UID:-12345}"
@@ -203,10 +202,8 @@ test_contract() {
     [ "$(docker image inspect -f '{{.Config.StopSignal}}' "${IMAGE}")" = SIGQUIT ] ||
         fail "image stop signal is not SIGQUIT"
     prepare_config "${config_dir}"
-    if [ "${CHECK_LUA_MODULES}" = 1 ]; then
-        cp "${FIXTURE_ROOT}/lua-paths.conf" "${config_dir}/nginx/http.d/"
-        cp "${FIXTURE_ROOT}/lua-load.conf" "${config_dir}/nginx/http.d/"
-    fi
+    cp "${FIXTURE_ROOT}/lua-paths.conf" "${config_dir}/nginx/http.d/"
+    cp "${FIXTURE_ROOT}/lua-load.conf" "${config_dir}/nginx/http.d/"
     prepare_fixture_volume "${config_dir}" "${config_volume}"
     CONTAINERS+=("${target}")
     DIAGNOSTIC_CONTAINERS=("${target}")

@@ -87,7 +87,7 @@ After the smoke checks have passed, run only the remaining cases:
 TEST_CASES=enabled,nonroot scripts/verify-integration.sh
 ```
 
-Run offline script and retention checks with `scripts/verify-static.sh`.
+Run offline script checks with `scripts/verify-static.sh`.
 The wrapper accepts `IMAGE` (default `docker-nginx:verify`), `SKIP_BUILD=1`,
 `PLATFORM` (one platform), `DOCKERFILE`, `BUILD_CONTEXT`, `BUILD_NETWORK`, and
 `TEST_CASES`. Builds default to host networking for the development daemon;
@@ -103,8 +103,7 @@ IMAGE=docker-nginx:verify SKIP_BUILD=1 TEST_CASES=nonroot scripts/verify-image.s
 The cases are `contract` (missing/invalid configuration, health, PID 1, Lua
 modules, and graceful shutdown), `enabled` (CrowdSec and TLS/HTTP/2), and
 `nonroot` (read-only arbitrary UID/GID operation and successful reload).
-Integration checks load Lua dependencies by default in `contract`;
-`CHECK_LUA_MODULES=0` explicitly omits that check.
+The `contract` case always loads the required Lua dependencies.
 `TEST_UID` and `TEST_GID` select the arbitrary identity (defaults 12345:23456).
 `WAIT_TIMEOUT` sets readiness/exit deadlines in seconds (default 30), and
 `CURL_TIMEOUT` bounds each request (default 3).

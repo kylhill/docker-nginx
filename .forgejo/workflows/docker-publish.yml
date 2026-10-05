@@ -57,7 +57,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check scripts and retention logic
+      - name: Check scripts
         run: scripts/verify-static.sh
 
       - name: Create Docker context
@@ -107,22 +107,12 @@ jobs:
             --pull \
             --provenance=mode=max \
             --sbom="generator=${SYFT_SCANNER_IMAGE}" \
-            --cache-from "type=registry,ref=${IMAGE}:buildcache-amd64" \
             --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
             --metadata-file /tmp/amd64-metadata.json \
             .
 
           digest="$(python3 -c 'import json; print(json.load(open("/tmp/amd64-metadata.json"))["containerimage.digest"])')"
           echo "AMD64_DIGEST=${digest}" >> "${FORGEJO_ENV}"
-
-          # Forgejo can reject concurrent image and cache uploads when both
-          # exporters try to commit the same new blob. Export the cache only
-          # after the image's content-addressed manifest has been pushed.
-          docker buildx build \
-            --platform linux/amd64 \
-            --cache-from "type=registry,ref=${IMAGE}:buildcache-amd64" \
-            --cache-to "type=registry,ref=${IMAGE}:buildcache-amd64,mode=max,image-manifest=true,oci-mediatypes=true" \
-            .
 
       - name: Build and test arm64
         run: |
@@ -131,19 +121,12 @@ jobs:
             --pull \
             --provenance=mode=max \
             --sbom="generator=${SYFT_SCANNER_IMAGE}" \
-            --cache-from "type=registry,ref=${IMAGE}:buildcache-arm64" \
             --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
             --metadata-file /tmp/arm64-metadata.json \
             .
 
           digest="$(python3 -c 'import json; print(json.load(open("/tmp/arm64-metadata.json"))["containerimage.digest"])')"
           echo "ARM64_DIGEST=${digest}" >> "${FORGEJO_ENV}"
-
-          docker buildx build \
-            --platform linux/arm64 \
-            --cache-from "type=registry,ref=${IMAGE}:buildcache-arm64" \
-            --cache-to "type=registry,ref=${IMAGE}:buildcache-arm64,mode=max,image-manifest=true,oci-mediatypes=true" \
-            .
 
           docker pull "${IMAGE}@${digest}"
           docker tag "${IMAGE}@${digest}" docker-nginx:test-arm64
@@ -161,13 +144,6 @@ jobs:
             --tag "${IMAGE}:latest" \
             "${IMAGE}@${AMD64_DIGEST}" \
             "${IMAGE}@${ARM64_DIGEST}"
-
-      - name: Retain newest 10 SHA releases
-        env:
-          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
-          API_URL: https://git.tacomafia.net/api/v1
-          REPOSITORY: ${{ forgejo.repository }}
-        run: python3 scripts/cleanup-forgejo-packages.py
 
       - name: Log out
         if: always()

@@ -39,7 +39,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check scripts and retention logic
+      - name: Check scripts
         run: scripts/verify-static.sh
 
       - name: Set up QEMU

@@ -17,7 +17,6 @@ TEST_CASES=contract,enabled,nonroot scripts/verify-image.sh # build + full suite
 | Fixtures/example config | Affected runtime cases against a current image |
 | Dockerfile/packages/CrowdSec patch | Build once and run the full native suite |
 | Architecture-sensitive dependencies | Both architecture builds and native runtime coverage through CI |
-| Retention helper | `scripts/verify-static.sh`; no nginx build |
 | CI workflows | Offline checks and review platform, cache, export, and cleanup behavior; CI verifies runner-specific execution |
 
 `verify-image.sh` defaults to `TEST_CASES=contract` and image
@@ -100,7 +99,9 @@ retention. Keep PR and credentialed publishing cache/state isolated. Forgejo
 uses separate persistent builders with fixed names and `--keep-state` cleanup;
 the runner must serialize jobs using those names. Keep ephemeral context names
 distinct from builder names and clean up only successfully created resources.
-Preserve the separate Forgejo cache export needed to avoid blob-upload conflicts.
+Use the persistent builder state as the sole Forgejo build cache; do not add
+local or registry cache exports. Forgejo retention uses the package owner's
+built-in cleanup rule documented in `docs/ci.md`; GitHub retention runs in CI.
 
 The weekly Forgejo Renovate workflow tracks the Dockerfile frontend, official
 Alpine base, direct Alpine packages, the CrowdSec bouncer version and archive

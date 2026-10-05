@@ -38,5 +38,4 @@ fi
 echo "Running image verification for: ${TEST_CASES}..."
 IMAGE="${IMAGE}" \
 TEST_CASES="${TEST_CASES}" \
-CHECK_LUA_MODULES=1 \
     "${REPOSITORY_ROOT}/scripts/verify-integration.sh"

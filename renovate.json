@@ -62,8 +62,7 @@
       ],
       "registryUrls": [
         "https://dl-cdn.alpinelinux.org/alpine?branch=v3.24&components=main,community&arch=x86_64"
-      ],
-      "commitMessageTopic": "Alpine package {{depName}}"
+      ]
     },
     {
       "description": "Keep the Alpine base and all APK pins compatible on both architectures",
@@ -90,43 +89,6 @@
       "groupName": "Alpine runtime dependencies",
       "groupSlug": "alpine-runtime",
       "separateMajorMinor": false
-    },
-    {
-      "description": "Describe image updates consistently across native and custom extraction",
-      "matchDatasources": [
-        "docker"
-      ],
-      "commitMessageTopic": "container {{depName}}",
-      "prBodyDefinitions": {
-        "Type": "container"
-      }
-    },
-    {
-      "matchDatasources": [
-        "github-release-attachments"
-      ],
-      "matchPackageNames": [
-        "crowdsecurity/cs-nginx-bouncer"
-      ],
-      "commitMessageTopic": "CrowdSec nginx bouncer"
-    },
-    {
-      "matchManagers": [
-        "github-actions"
-      ],
-      "matchDepTypes": [
-        "action"
-      ],
-      "commitMessageTopic": "CI action {{depName}}"
-    },
-    {
-      "matchManagers": [
-        "github-actions"
-      ],
-      "matchDepTypes": [
-        "workflow"
-      ],
-      "commitMessageTopic": "CI workflow {{depName}}"
     },
     {
       "matchDatasources": [
