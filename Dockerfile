@@ -31,7 +31,7 @@ RUN set -eux; \
     "nginx-mod-http-geoip2=1.30.4-r1" \
     "nginx-mod-http-lua=1.30.4-r1" \
     "nginx-mod-http-zstd=1.30.4-r1" \
-    "tzdata=2026d-r0"; \
+    "tzdata=2026e-r0"; \
   tar -xzf "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk" \
     -C / usr/share/lua/common; \
   rm -f "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk"; \
