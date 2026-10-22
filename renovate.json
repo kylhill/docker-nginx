@@ -52,6 +52,12 @@
       "depTypeTemplate": "container"
     }
   ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "at any time"
+    ]
+  },
   "packageRules": [
     {
       "description": "Look up APK versions in the Alpine base branch; update this URL with base-branch upgrades",
