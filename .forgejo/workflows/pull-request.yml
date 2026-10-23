@@ -24,7 +24,7 @@ jobs:
     if: forgejo.event.pull_request.head.repo.full_name == forgejo.repository
     runs-on: oci-build
     container:
-      image: docker.io/library/node:24-alpine@sha256:6a1c190e17215d844926b0677f4bf87273ff7d5e54db06d3b5b5863ab0b09a3d
+      image: docker.io/library/node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
     timeout-minutes: 60
     defaults:
       run:
