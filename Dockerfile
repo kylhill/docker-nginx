@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
-FROM docker.io/library/alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+FROM docker.io/library/alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
 
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 
@@ -26,11 +26,11 @@ RUN set -eux; \
     "lua-resty-http=0.17.2-r0" \
     "lua-resty-openssl=1.6.1-r0" \
     "lua5.1-cjson=2.1.0-r12" \
-    "nginx=1.30.4-r1" \
-    "nginx-mod-http-brotli=1.30.4-r1" \
-    "nginx-mod-http-geoip2=1.30.4-r1" \
-    "nginx-mod-http-lua=1.30.4-r1" \
-    "nginx-mod-http-zstd=1.30.4-r1" \
+    "nginx=1.30.6-r0" \
+    "nginx-mod-http-brotli=1.30.6-r0" \
+    "nginx-mod-http-geoip2=1.30.6-r0" \
+    "nginx-mod-http-lua=1.30.6-r0" \
+    "nginx-mod-http-zstd=1.30.6-r0" \
     "tzdata=2026e-r0"; \
   tar -xzf "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk" \
     -C / usr/share/lua/common; \
