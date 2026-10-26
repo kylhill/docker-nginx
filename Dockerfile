@@ -22,7 +22,7 @@ RUN set -eux; \
   apk fetch --no-cache --no-progress --match package --output /tmp \
     "lua-resty-string-${LUA_RESTY_STRING_VERSION}"; \
   apk add --no-cache --no-progress \
-    "curl=8.22.0-r0" \
+    "curl=8.23.0-r0" \
     "lua-resty-http=0.17.2-r0" \
     "lua-resty-openssl=1.6.1-r0" \
     "lua5.1-cjson=2.1.0-r12" \
