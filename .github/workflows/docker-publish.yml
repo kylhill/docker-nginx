@@ -31,7 +31,7 @@ jobs:
       # renovate: datasource=docker depName=moby/buildkit
       BUILDKIT_IMAGE: docker.io/moby/buildkit:buildx-stable-1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
       # renovate: datasource=docker depName=docker/buildkit-syft-scanner
-      SYFT_SCANNER_IMAGE: docker.io/docker/buildkit-syft-scanner:stable-1@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
+      SYFT_SCANNER_IMAGE: docker.io/docker/buildkit-syft-scanner:stable-1@sha256:873a7458c3c8ac8e32c7b796c10e1600b07b963d2aa000a72a2d97aaaa2d6315
 
     steps:
       - name: Checkout
