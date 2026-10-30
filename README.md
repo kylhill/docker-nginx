@@ -134,9 +134,13 @@ Forgejo repository and opens pull requests for Dockerfile dependency updates.
 All APK dependencies join the Alpine runtime group automatically; a separate
 rule puts the Alpine base in that same group so a stable-branch transition is
 applied atomically. Actions in GitHub and Forgejo workflows are pinned to commit
-SHAs with version comments, allowing Renovate to update them safely. Renovate
+SHAs with version comments. Forgejo action digest-only updates are disabled;
+Renovate updates the SHA and version comment together for new releases. Renovate
 also updates pinned CI helper image digests. The standard GitHub Actions manager
 updates the Forgejo job's Node container tag and digest, including major updates.
+Node and Renovate CI images use exact point-release tags plus digests. Digest-only
+updates are disabled for these two images; version upgrades update both the tag
+and digest together.
 
 `lua-resty-string` is extracted without its OpenResty dependency, so its Alpine
 package is pinned and updated with the other direct APK dependencies. The
