@@ -5,19 +5,28 @@ name: Renovate
   schedule:
     - cron: "32 9 * * 5"
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - renovate.json
+      - .forgejo/workflows/renovate.yml
+      - Dockerfile
+      - scripts/check-renovate-alpine.py
 
 enable-email-notifications: true
 
 concurrency:
-  group: renovate-${{ forgejo.repository }}
-  cancel-in-progress: false
+  group: renovate-${{ forgejo.event.pull_request.number || forgejo.repository }}
+  cancel-in-progress: ${{ forgejo.event_name == 'pull_request' }}
 
 jobs:
   renovate:
+    if: forgejo.event_name != 'pull_request'
     runs-on: oci-deps
     timeout-minutes: 60
     container:
-      image: docker.io/renovate/renovate:44.198.0@sha256:9ace7c60234605b242fa7edf44f77a70a17f3b0e963e8e969bd59341a5b4295d
+      image: &renovate_image docker.io/renovate/renovate:44.198.0@sha256:9ace7c60234605b242fa7edf44f77a70a17f3b0e963e8e969bd59341a5b4295d
       volumes:
         - /opt/cache/renovate:/tmp/renovate/cache
     env:
@@ -36,3 +45,34 @@ jobs:
     steps:
       - name: Update dependencies
         run: renovate
+
+  renovate-config:
+    if: forgejo.event_name == 'pull_request' && forgejo.event.pull_request.head.repo.full_name == forgejo.repository
+    runs-on: oci-deps
+    timeout-minutes: 10
+    container:
+      image: *renovate_image
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate Renovate configuration
+        run: renovate-config-validator --strict --no-global renovate.json
+
+  alpine-branch:
+    if: forgejo.event_name == 'pull_request' && forgejo.event.pull_request.head.repo.full_name == forgejo.repository
+    runs-on: oci-deps
+    timeout-minutes: 10
+    steps:
+      - name: Install Python
+        run: apk add --no-cache python3
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check Alpine lookup branch
+        run: python3 scripts/check-renovate-alpine.py

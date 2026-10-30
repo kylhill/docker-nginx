@@ -135,7 +135,8 @@ Forgejo repository and opens pull requests for Dockerfile dependency updates.
 The policy is local to this repository. A dedicated PR workflow runs
 `renovate-config-validator --strict --no-global renovate.json` with the same
 pinned Renovate image as the scheduled bot. Configuration-only changes do not
-trigger image builds.
+trigger image builds. The scheduled bot and PR validator share one image pin
+through a YAML anchor in the same workflow.
 All APK dependencies join the Alpine runtime group automatically; a separate
 rule puts the Alpine base in that same group so a stable-branch transition is
 applied atomically. Actions in GitHub and Forgejo workflows are pinned to commit
