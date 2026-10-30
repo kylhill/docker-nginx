@@ -95,5 +95,7 @@ Alpine base, direct Alpine packages, the CrowdSec bouncer version and archive
 checksum, and action references in GitHub and Forgejo workflows. CI helper
 image digests are pinned and updated automatically. Pin actions to full commit
 SHAs with version comments. Disable digest-only updates for Forgejo actions;
-version upgrades update the SHA and version comment together. Renovate updates the Forgejo
-job's Node container tag and digest through the standard GitHub Actions manager.
+version upgrades update the SHA and version comment together. Forgejo build and
+validation jobs inherit the pinned Node Alpine image from `oci-build`; its tag
+and digest are managed by the infra repository's runner configuration.
+Renovate jobs retain their dedicated pinned image.

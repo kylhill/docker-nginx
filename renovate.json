@@ -103,7 +103,6 @@
         "docker"
       ],
       "matchPackageNames": [
-        "docker.io/library/node",
         "docker.io/renovate/renovate"
       ],
       "matchUpdateTypes": [

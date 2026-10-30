@@ -136,11 +136,11 @@ rule puts the Alpine base in that same group so a stable-branch transition is
 applied atomically. Actions in GitHub and Forgejo workflows are pinned to commit
 SHAs with version comments. Forgejo action digest-only updates are disabled;
 Renovate updates the SHA and version comment together for new releases. Renovate
-also updates pinned CI helper image digests. The standard GitHub Actions manager
-updates the Forgejo job's Node container tag and digest, including major updates.
-Node and Renovate CI images use exact point-release tags plus digests. Digest-only
-updates are disabled for these two images; version upgrades update both the tag
-and digest together.
+also updates pinned CI helper image digests. Forgejo build and validation jobs
+inherit their pinned Node Alpine image from the `oci-build` runner label; the
+infra repository manages that image's version and digest. Renovate retains its
+dedicated image with an exact point-release tag and digest. Its digest-only
+updates are disabled; version upgrades update both the tag and digest together.
 
 `lua-resty-string` is extracted without its OpenResty dependency, so its Alpine
 package is pinned and updated with the other direct APK dependencies. The

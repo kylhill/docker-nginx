@@ -33,8 +33,10 @@ Until the account rule is configured, this workflow performs no Forgejo
 retention. Actual disk reclamation also depends on server blob garbage collection;
 this rule does not remove dangling digest versions.
 
-The job uses a pinned Node.js Alpine image managed by Renovate, providing Node.js
-for `actions/checkout`. Before checkout, a `sh` step installs Bash, Docker CLI
+Forgejo build and validation jobs inherit the pinned Node.js Alpine image from
+`oci-build`; its version and digest are managed in the infra repository's runner
+configuration. This supplies Node.js for `actions/checkout`. Before checkout,
+a `sh` step installs Bash, Docker CLI
 and Buildx, Git, OpenSSL, Python 3, and ShellCheck. Offline script checks run
 before build setup. The runner must provide Docker daemon
 access and support for building both architectures (including preconfigured
