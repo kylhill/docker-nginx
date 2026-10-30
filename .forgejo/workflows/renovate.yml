@@ -26,7 +26,7 @@ jobs:
     runs-on: oci-deps
     timeout-minutes: 60
     container:
-      image: &renovate_image docker.io/renovate/renovate:44.198.0@sha256:9ace7c60234605b242fa7edf44f77a70a17f3b0e963e8e969bd59341a5b4295d
+      image: docker.io/renovate/renovate:44.198.0@sha256:9ace7c60234605b242fa7edf44f77a70a17f3b0e963e8e969bd59341a5b4295d
       volumes:
         - /opt/cache/renovate:/tmp/renovate/cache
     env:
@@ -51,7 +51,7 @@ jobs:
     runs-on: oci-deps
     timeout-minutes: 10
     container:
-      image: *renovate_image
+      image: docker.io/renovate/renovate:44.198.0@sha256:9ace7c60234605b242fa7edf44f77a70a17f3b0e963e8e969bd59341a5b4295d
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
