@@ -1,28 +1,21 @@
 ---
-name: Renovate
+name: Maintenance
 
 "on":
   schedule:
     - cron: "32 9 * * 5"
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - renovate.json
-      - .forgejo/workflows/renovate.yml
-      - Dockerfile
-      - scripts/check-renovate-alpine.py
 
 enable-email-notifications: true
 
 concurrency:
-  group: renovate-${{ forgejo.event.pull_request.number || forgejo.repository }}
-  cancel-in-progress: ${{ forgejo.event_name == 'pull_request' }}
+  group: maintenance-${{ forgejo.repository }}
+  cancel-in-progress: false
 
 jobs:
   renovate:
-    if: forgejo.event_name != 'pull_request'
+    name: Update dependencies
+    if: forgejo.event_name == 'schedule' || forgejo.event_name == 'workflow_dispatch'
     runs-on: oci-deps
     timeout-minutes: 60
     container:
@@ -46,33 +39,23 @@ jobs:
       - name: Update dependencies
         run: renovate
 
-  renovate-config:
-    if: forgejo.event_name == 'pull_request' && forgejo.event.pull_request.head.repo.full_name == forgejo.repository
+  validate:
+    name: Weekly validation
+    if: forgejo.event_name == 'schedule' || forgejo.event_name == 'workflow_dispatch'
     runs-on: oci-deps
     timeout-minutes: 10
-    container:
-      image: docker.io/renovate/renovate:44.198.0@sha256:9ace7c60234605b242fa7edf44f77a70a17f3b0e963e8e969bd59341a5b4295d
+    defaults:
+      run:
+        shell: bash
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Validate Renovate configuration
-        run: renovate-config-validator --strict --no-global renovate.json
-
-  alpine-branch:
-    if: forgejo.event_name == 'pull_request' && forgejo.event.pull_request.head.repo.full_name == forgejo.repository
-    runs-on: oci-deps
-    timeout-minutes: 10
-    steps:
-      - name: Install Python
-        run: apk add --no-cache python3
+      - name: Install job tools
+        shell: sh
+        run: apk add --no-cache bash git python3 shellcheck
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Check Alpine lookup branch
-        run: python3 scripts/check-renovate-alpine.py
+      - name: Run offline checks
+        run: scripts/verify-static.sh

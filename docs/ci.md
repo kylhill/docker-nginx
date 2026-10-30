@@ -33,12 +33,26 @@ Until the account rule is configured, this workflow performs no Forgejo
 retention. Actual disk reclamation also depends on server blob garbage collection;
 this rule does not remove dangling digest versions.
 
-Forgejo build and validation jobs inherit the pinned Node.js Alpine image from
+PR validation runs independent Configuration and Static checks jobs. Static
+checks use `oci-deps` and must pass before the `oci-build` image job starts.
+The image job runs only when Dockerfile, build configuration, patches, scripts,
+tests, examples, or publishing workflows change. Documentation and Renovate-only
+changes run the inexpensive checks without an image build. PR runs cancel older
+runs for the same PR.
+
+`renovate.yml` is the Maintenance workflow. On its weekly schedule or manual
+dispatch, independent jobs run Renovate and `scripts/verify-static.sh`. Scheduled
+validation builds no images and does not publish. Maintenance runs queue rather
+than cancelling each other. The publishing workflows remain separate and use
+their existing trusted-main/manual triggers and isolated publishing caches.
+
+Forgejo image build jobs inherit the pinned Node.js Alpine image from
 `oci-build`; its version and digest are managed in the infra repository's runner
 configuration. This supplies Node.js for `actions/checkout`. Before checkout,
 a `sh` step installs Bash, Docker CLI
-and Buildx, Git, OpenSSL, Python 3, and ShellCheck. Offline script checks run
-before build setup. The runner must provide Docker daemon
+and Buildx, Git, OpenSSL, and Python 3. Static checks have a separate lightweight
+job that installs Bash, Git, Python 3, and ShellCheck. Publishing jobs retain
+their own static checks before build setup. The runner must provide Docker daemon
 access and support for building both architectures (including preconfigured
 QEMU/binfmt emulation for non-native builds). Test fixtures are transferred
 through the Docker API, not host bind mounts.

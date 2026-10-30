@@ -5,23 +5,57 @@ name: Pull request validation
   pull_request:
     branches:
       - main
-    paths:
-      - Dockerfile
-      - .dockerignore
-      - .forgejo/buildkitd.toml
-      - patches/**
-      - scripts/**
-      - tests/**
-      - examples/**
-      - .forgejo/workflows/pull-request.yml
 
 concurrency:
   group: docker-nginx-pr-${{ forgejo.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  static:
+    name: Static checks
     if: forgejo.event.pull_request.head.repo.full_name == forgejo.repository
+    runs-on: oci-deps
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      build: ${{ steps.changes.outputs.build }}
+    steps:
+      - name: Install job tools
+        shell: sh
+        run: apk add --no-cache bash git python3 shellcheck
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run offline checks
+        run: scripts/verify-static.sh
+
+      - name: Select image checks
+        id: changes
+        env:
+          BASE_SHA: ${{ forgejo.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ forgejo.event.pull_request.head.sha }}
+        run: |
+          if git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
+              Dockerfile .dockerignore .forgejo/buildkitd.toml patches scripts tests examples \
+              .forgejo/workflows/pull-request.yml .forgejo/workflows/docker-publish.yml \
+              .github/workflows/docker-publish.yml; then
+            echo 'build=false' >> "$GITHUB_OUTPUT"
+          else
+            result=$?
+            if [[ "$result" != 1 ]]; then exit "$result"; fi
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build and integration tests
+    needs: static
+    if: needs.static.outputs.build == 'true'
     runs-on: oci-build
     timeout-minutes: 60
     defaults:
@@ -43,16 +77,12 @@ jobs:
             docker-cli-buildx \
             git \
             openssl \
-            python3 \
-            shellcheck
+            python3
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Check scripts
-        run: scripts/verify-static.sh
 
       - name: Create Docker context
         id: docker_context
@@ -98,3 +128,19 @@ jobs:
       - name: Remove Docker context
         if: always() && steps.docker_context.outcome == 'success'
         run: docker context rm "${BUILDX_CONTEXT}"
+
+  renovate-config:
+    name: Configuration
+    if: forgejo.event.pull_request.head.repo.full_name == forgejo.repository
+    runs-on: oci-deps
+    timeout-minutes: 10
+    container:
+      image: docker.io/renovate/renovate:44.198.0@sha256:9ace7c60234605b242fa7edf44f77a70a17f3b0e963e8e969bd59341a5b4295d
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate Renovate configuration
+        run: renovate-config-validator --strict --no-global renovate.json
