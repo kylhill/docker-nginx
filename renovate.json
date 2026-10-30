@@ -6,7 +6,6 @@
   ],
   "prHourlyLimit": 0,
   "prConcurrentLimit": 0,
-  "branchConcurrentLimit": 0,
   "enabledManagers": [
     "dockerfile",
     "github-actions",
@@ -52,12 +51,6 @@
       "depTypeTemplate": "container"
     }
   ],
-  "lockFileMaintenance": {
-    "enabled": true,
-    "schedule": [
-      "at any time"
-    ]
-  },
   "packageRules": [
     {
       "description": "Look up APK versions in the Alpine base branch; update this URL with base-branch upgrades",
@@ -109,20 +102,6 @@
         "digest"
       ],
       "enabled": false
-    },
-    {
-      "description": "Keep Forgejo actions pinned to release commits",
-      "matchManagers": [
-        "github-actions"
-      ],
-      "matchFileNames": [
-        ".forgejo/workflows/**"
-      ],
-      "matchDepTypes": [
-        "action",
-        "workflow"
-      ],
-      "pinDigests": true
     },
     {
       "description": "Disable digest-only updates for Forgejo actions",

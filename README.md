@@ -76,7 +76,8 @@ scripts/verify-image.sh
 ```
 
 For a focused smoke check, use `TEST_CASES=contract scripts/verify-image.sh`.
-Run offline script checks with `scripts/verify-static.sh`.
+Run offline script checks with `scripts/verify-static.sh`. These also verify
+that Renovate’s APK registry branch matches the Dockerfile’s Alpine base.
 The build wrapper requires Docker Buildx and accepts `IMAGE` (default
 `docker-nginx:verify`), `BUILD_NETWORK`, and `TEST_CASES`. Builds default to host
 networking for the development daemon; set `BUILD_NETWORK=default` for a builder with a working
@@ -131,6 +132,10 @@ isolation, credentials, and retention.
 The Dockerfile frontend, official Alpine base, direct Alpine packages, and
 CrowdSec bouncer archive are pinned. Renovate runs weekly on the authoritative
 Forgejo repository and opens pull requests for Dockerfile dependency updates.
+The policy is local to this repository. A dedicated PR workflow runs
+`renovate-config-validator --strict --no-global renovate.json` with the same
+pinned Renovate image as the scheduled bot. Configuration-only changes do not
+trigger image builds.
 All APK dependencies join the Alpine runtime group automatically; a separate
 rule puts the Alpine base in that same group so a stable-branch transition is
 applied atomically. Actions in GitHub and Forgejo workflows are pinned to commit
@@ -154,7 +159,8 @@ keeps coupled dependencies together. Native Dockerfile extraction manages
 literal `apk add` version pins; a small custom matcher handles the separately
 downloaded `lua-resty-string` archive. The Renovate workflow uses an image with native APK extraction support.
 
-The APK registry rule must match the Alpine base branch. When upgrading that
+The APK registry rule must match the Alpine base branch;
+`scripts/verify-static.sh` rejects drift in either direction. When upgrading that
 branch, update its registry URL and package pins together, including nginx and
 its dynamic modules, and verify both image architectures. For Node major
 updates, verify that the image digest matches the new tag. No post-upgrade

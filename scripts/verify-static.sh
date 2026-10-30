@@ -12,6 +12,7 @@ if command -v shellcheck >/dev/null; then
 else
     echo "ShellCheck unavailable; Bash syntax checks only."
 fi
+python3 "${REPOSITORY_ROOT}/scripts/check-renovate-alpine.py"
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
     -s "${REPOSITORY_ROOT}/tests" -p 'test_*.py' -v
 git -C "${REPOSITORY_ROOT}" diff --check

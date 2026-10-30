@@ -1,0 +1,48 @@
+---
+name: Renovate configuration validation
+
+"on":
+  pull_request:
+    branches:
+      - main
+    paths:
+      - renovate.json
+      - Dockerfile
+      - scripts/check-renovate-alpine.py
+      - .forgejo/workflows/renovate*.yml
+
+concurrency:
+  group: renovate-config-${{ forgejo.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  renovate-config:
+    if: forgejo.event.pull_request.head.repo.full_name == forgejo.repository
+    runs-on: oci-deps
+    timeout-minutes: 10
+    container:
+      image: docker.io/renovate/renovate:44.198.0@sha256:9ace7c60234605b242fa7edf44f77a70a17f3b0e963e8e969bd59341a5b4295d
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate Renovate configuration
+        run: renovate-config-validator --strict --no-global renovate.json
+
+  alpine-branch:
+    if: forgejo.event.pull_request.head.repo.full_name == forgejo.repository
+    runs-on: oci-deps
+    timeout-minutes: 10
+    steps:
+      - name: Install Python
+        run: apk add --no-cache python3
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check Alpine lookup branch
+        run: python3 scripts/check-renovate-alpine.py
