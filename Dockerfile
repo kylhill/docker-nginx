@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
-FROM docker.io/library/alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+FROM docker.io/library/alpine:3.24@sha256:3f4d6b32e26703c6082839234f43769d5046b3ac7c910033911d1e71d8cd630a
 
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 
@@ -31,7 +31,7 @@ RUN set -eux; \
     "nginx-mod-http-geoip2=1.30.6-r0" \
     "nginx-mod-http-lua=1.30.6-r0" \
     "nginx-mod-http-zstd=1.30.6-r0" \
-    "tzdata=2026e-r0"; \
+    "tzdata=2026f-r0"; \
   tar -xzf "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk" \
     -C / usr/share/lua/common; \
   rm -f "/tmp/lua-resty-string-${LUA_RESTY_STRING_VERSION}.apk"; \
@@ -51,7 +51,7 @@ LABEL io.github.kylhill.docker-nginx.crowdsec-bouncer.version="${CROWDSEC_BOUNCE
 RUN --mount=type=bind,source=patches/crowdsec-lua.patch,target=/tmp/crowdsec-lua.patch,ro \
     set -eux; \
     apk add --no-cache --virtual .crowdsec-build-deps \
-      "patch=2.8-r0"; \
+      "patch=2.8.1-r0"; \
     CROWDSEC_ARCHIVE="/tmp/bouncer.tgz"; \
     CROWDSEC_DIR="/tmp/crowdsec-nginx-bouncer-${CROWDSEC_BOUNCER_VERSION}"; \
     \
