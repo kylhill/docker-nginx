@@ -22,9 +22,10 @@ jobs:
     outputs:
       build: ${{ steps.changes.outputs.build }}
     steps:
-      - name: Install job tools
-        shell: sh
-        run: apk add --no-cache bash git python3 shellcheck
+      - name: Install ShellCheck
+        run: |
+          apt-get update
+          apt-get install --no-install-recommends -y shellcheck
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -68,17 +69,6 @@ jobs:
       BUILDKIT_IMAGE: docker.io/moby/buildkit:buildx-stable-1@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
 
     steps:
-      - name: Install job tools
-        shell: sh
-        run: |
-          apk add --no-cache \
-            bash \
-            docker-cli \
-            docker-cli-buildx \
-            git \
-            openssl \
-            python3
-
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -46,16 +46,15 @@ validation builds no images and does not publish. Maintenance runs queue rather
 than cancelling each other. The publishing workflows remain separate and use
 their existing trusted-main/manual triggers and isolated publishing caches.
 
-Forgejo image build jobs inherit the pinned Node.js Alpine image from
-`oci-build`; its version and digest are managed in the infra repository's runner
-configuration. This supplies Node.js for `actions/checkout`. Before checkout,
-a `sh` step installs Bash, Docker CLI
-and Buildx, Git, OpenSSL, and Python 3. Static checks have a separate lightweight
-job that installs Bash, Git, Python 3, and ShellCheck. Publishing jobs retain
-their own static checks before build setup. The runner must provide Docker daemon
-access and support for building both architectures (including preconfigured
-QEMU/binfmt emulation for non-native builds). Test fixtures are transferred
-through the Docker API, not host bind mounts.
+Forgejo image build jobs inherit the digest-pinned Catthehacker
+`act-latest` image from `oci-build`; its tag and digest are managed in the infra
+repository's runner configuration. The image supplies Node.js for checkout,
+Bash, Docker CLI and Buildx, Git, OpenSSL, and Python 3. Static and publishing
+jobs install ShellCheck with apt before running offline checks. Deploy the
+runner image change before publishing these workflows.
+The runner must provide Docker daemon access and support for building both
+architectures (including preconfigured QEMU/binfmt emulation for non-native
+builds). Test fixtures are transferred through the Docker API, not host bind mounts.
 The job creates a per-run Docker context from the runner's connection settings,
 including TLS certificates, and passes it explicitly to Buildx. The builder and
 context are removed afterward only if their creation succeeded. PR builds use
