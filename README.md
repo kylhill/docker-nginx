@@ -130,13 +130,11 @@ isolation, credentials, and retention.
 ## Dependency updates
 
 The Dockerfile frontend, official Alpine base, direct Alpine packages, and
-CrowdSec bouncer archive are pinned. Renovate runs weekly on the authoritative
-Forgejo repository and opens pull requests for Dockerfile dependency updates.
-The policy is local to this repository. A dedicated PR workflow runs
-`renovate-config-validator --strict --no-global renovate.json` with the same
-pinned Renovate image as the scheduled bot. Configuration-only changes do not
-trigger image builds. The scheduled bot and PR validator use explicit matching image pins.
-Update both pins together; cross-job YAML anchors fail during Forgejo job dispatch.
+CrowdSec bouncer archive are pinned. Renovate runs weekly from infra on the authoritative
+Forgejo repositories and opens pull requests for Dockerfile dependency updates.
+The policy is local to this repository. Validate substantial policy changes
+manually with `renovate-config-validator --strict --no-global renovate.json`
+using the central bot image. Configuration-only changes do not trigger image builds.
 All APK dependencies join the Alpine runtime group automatically; a separate
 rule puts the Alpine base in that same group so a stable-branch transition is
 applied atomically. Actions in GitHub and Forgejo workflows are pinned to commit

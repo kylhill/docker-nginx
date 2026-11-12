@@ -33,18 +33,17 @@ Until the account rule is configured, this workflow performs no Forgejo
 retention. Actual disk reclamation also depends on server blob garbage collection;
 this rule does not remove dangling digest versions.
 
-PR validation runs independent Configuration and Static checks jobs. Static
+PR validation starts with Static checks. These
 checks use `oci-deps` and must pass before the `oci-build` image job starts.
 The image job runs only when Dockerfile, build configuration, patches, scripts,
 tests, examples, or publishing workflows change. Documentation and Renovate-only
 changes run the inexpensive checks without an image build. PR runs cancel older
 runs for the same PR.
 
-`renovate.yml` is the Maintenance workflow. On its weekly schedule or manual
-dispatch, independent jobs run Renovate and `scripts/verify-static.sh`. Scheduled
-validation builds no images and does not publish. Maintenance runs queue rather
-than cancelling each other. The publishing workflows remain separate and use
-their existing trusted-main/manual triggers and isolated publishing caches.
+Dependency updates run from infra's central Maintenance workflow. This
+repository has no scheduled maintenance or validation workflow. PR checks and
+local verification provide validation. Publishing workflows remain separate
+with their existing trusted-main/manual triggers and isolated publishing caches.
 
 Forgejo image build jobs inherit the digest-pinned Catthehacker
 `act-latest` image from `oci-build`; its tag and digest are managed in the infra
@@ -91,3 +90,12 @@ Published images are pulled and tested directly by digest, using
 `verify-integration.sh` on arm64 in Forgejo and amd64 in GitHub. Forgejo PR
 validation loads its native image locally; the cache-only amd64 build remains
 an explicit Buildx command. These commands add no runtime emulation setup.
+
+
+Dependency update scheduling is owned by infra's Maintenance workflow. Its
+explicit allowlist covers `kylhill/infra`, `kylhill/nixos`, and
+`kylhill/docker-nginx`. Weekly maintenance validation jobs have been removed; PR and local validation
+remain available. The central bot token must have access to all three repositories;
+Validate substantial Renovate policy changes manually with the bot image.
+Deploy the central workflow and disable the old per-repository bot jobs together
+to avoid overlapping bot runs. No credential change is automated.

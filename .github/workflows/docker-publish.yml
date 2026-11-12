@@ -112,17 +112,13 @@ jobs:
           esac
           package_path+="/packages/container/${PACKAGE_NAME}/versions"
 
-          mapfile -t expired_ids < <(
-            gh api --paginate --slurp \
-              "${package_path}?state=active&per_page=100" |
-              jq -r '
-                [ .[][]
-                  | select(any(.metadata.container.tags[]?;
-                      test("^sha-[a-f0-9]{12}$"))) ]
-                | sort_by(.created_at, .id) | reverse | .[10:]
-                | .[].id
-              '
-          )
+          cleanup_dir="$(mktemp -d)"
+          trap 'rm -rf -- "$cleanup_dir"' EXIT
+          gh api --paginate --slurp \
+            "${package_path}?state=active&per_page=100" > "$cleanup_dir/versions.json"
+          python3 scripts/expired-ghcr-versions.py \
+            < "$cleanup_dir/versions.json" > "$cleanup_dir/expired-ids"
+          mapfile -t expired_ids < "$cleanup_dir/expired-ids"
 
           echo "Deleting ${#expired_ids[@]} SHA releases; retaining the newest 10."
           for version_id in "${expired_ids[@]}"; do

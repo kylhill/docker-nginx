@@ -118,19 +118,3 @@ jobs:
       - name: Remove Docker context
         if: always() && steps.docker_context.outcome == 'success'
         run: docker context rm "${BUILDX_CONTEXT}"
-
-  renovate-config:
-    name: Configuration
-    if: forgejo.event.pull_request.head.repo.full_name == forgejo.repository
-    runs-on: oci-deps
-    timeout-minutes: 10
-    container:
-      image: docker.io/renovate/renovate:44.236.2@sha256:55deecada47b7a8b1bf07218c91fd62f380d374a2b87e08570af5bfcd63c34d8
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Validate Renovate configuration
-        run: renovate-config-validator --strict --no-global renovate.json
