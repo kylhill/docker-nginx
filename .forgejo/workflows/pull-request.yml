@@ -66,7 +66,7 @@ jobs:
       BUILDX_BUILDER: docker-nginx-pr
       BUILDX_CONTEXT: pr-context-${{ forgejo.run_id }}
       # renovate: datasource=docker depName=moby/buildkit
-      BUILDKIT_IMAGE: docker.io/moby/buildkit:buildx-stable-1@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
+      BUILDKIT_IMAGE: docker.io/moby/buildkit:buildx-stable-1@sha256:baf6138eb8c37644800c7c913fba051e840ebb9ba13eaf92d92ef9a1712d0b4c
 
     steps:
       - name: Checkout
